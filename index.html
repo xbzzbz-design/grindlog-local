@@ -1,0 +1,1049 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f4efe6" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="The Grind" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <title>The Grind</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Hanken+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { background: #1a1614; height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      -webkit-text-size-adjust: 100%;
+      height: 100%; background: #f4efe6;
+    }
+    #root {
+      width: 100%; max-width: 430px; margin: 0 auto;
+      height: 100vh; height: 100dvh;
+      position: relative; overflow: hidden; background: #f4efe6;
+    }
+    ::-webkit-scrollbar { display: none; }
+    * { scrollbar-width: none; }
+
+    .jp-tap {
+      transition: transform .18s cubic-bezier(.2,.7,.3,1), opacity .18s;
+      user-select: none; -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .jp-tap:active { transform: scale(.97); opacity: .88; }
+    .jp-screen { position: absolute; inset: 0; will-change: transform; }
+    .jp-enter-right { animation: jpInRight .42s cubic-bezier(.22,1,.36,1) both; }
+    .jp-enter-up   { animation: jpInUp   .46s cubic-bezier(.22,1,.36,1) both; }
+    .jp-enter-fade { animation: jpFade   .42s ease both; }
+    .jp-stagger > * { opacity: 0; animation: jpRise .55s cubic-bezier(.22,1,.36,1) forwards; }
+    .jp-stagger > *:nth-child(1) { animation-delay: .04s }
+    .jp-stagger > *:nth-child(2) { animation-delay: .10s }
+    .jp-stagger > *:nth-child(3) { animation-delay: .16s }
+    .jp-stagger > *:nth-child(4) { animation-delay: .22s }
+    .jp-stagger > *:nth-child(5) { animation-delay: .28s }
+    .jp-stagger > *:nth-child(6) { animation-delay: .34s }
+    @keyframes jpInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    @keyframes jpInUp    { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    @keyframes jpFade    { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes jpRise    { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform:none; } }
+    @keyframes jpStarPop { 0% { transform: scale(.6); opacity:0; } 60% { transform: scale(1.15); opacity:1; } 100% { transform: scale(1); opacity:1; } }
+    @keyframes jpProgress { from { transform: scaleX(0); } to { transform: scaleX(var(--p,1)); } }
+    @keyframes jpShimmer  { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+    .jp-star-pop      { animation: jpStarPop .35s cubic-bezier(.34,1.56,.64,1) both; }
+    .jp-progress-fill { transform-origin: left; animation: jpProgress 1.1s cubic-bezier(.22,1,.36,1) .3s both; }
+
+    .jp-paper {
+      background: #f4efe6;
+      background-image:
+        radial-gradient(circle at 20% 30%, rgba(139,69,19,.04), transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(26,22,20,.03), transparent 40%);
+    }
+    .jp-paper::before {
+      content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractionalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .1  0 0 0 0 .09  0 0 0 0 .08  0 0 0 .035 0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
+      opacity: .9; mix-blend-mode: multiply;
+    }
+    input, button, textarea { font-family: inherit; }
+    input::placeholder { color: rgba(139,125,114,.55); }
+    input:focus, textarea:focus { outline: none; }
+    button { cursor: pointer; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" data-presets="react">
+// ─── Data ──────────────────────────────────────────────────────────────────
+const TODAY = new Date('2026-05-24');
+const ESPRESSO_DOSE = 18;
+let _brewId = 0;
+const mkB = (id, date, dose, grind) => ({ id, date, dose: +dose, grind });
+
+const INITIAL_BEANS = [
+  {
+    id:'b1', name:'Konga', origin:'Ethiopia', region:'Yirgacheffe',
+    roaster:'Onibus Coffee', process:'Washed', varietal:'Heirloom', altitude:'1950 m',
+    roastLevel:'Light', roastDate:'2026-05-18', rating:5,
+    notes:['Jasmine','Lemon','Bergamot','Honey'],
+    description:'Bright florals and clean stone fruit. Pulls best at 1:16, 92°C.',
+    tone:['#e8c89a','#7a4827'], gramsLeft:210, weightBought:250, pricePaid:2400,
+    brews:[mkB('br1-1','2026-05-23',18.0,'2.5'),mkB('br1-2','2026-05-22',18.2,'2.4'),mkB('br1-3','2026-05-20',17.8,'2.6')],
+  },
+  {
+    id:'b2', name:'Geisha Lot 14', origin:'Panama', region:'Boquete',
+    roaster:'Fuglen Tokyo', process:'Natural', varietal:'Geisha', altitude:'1700 m',
+    roastLevel:'Light', roastDate:'2026-05-10', rating:5,
+    notes:['Peach','Earl Grey','White Tea','Apricot'],
+    description:'Delicate, tea-like, a long sweet finish. Treat it gently.',
+    tone:['#f0d4a0','#a05530'], gramsLeft:120, weightBought:150, pricePaid:4800,
+    brews:[mkB('br2-1','2026-05-23',18.0,'3.0'),mkB('br2-2','2026-05-21',17.5,'3.1')],
+  },
+  {
+    id:'b3', name:'Sidra Lot 03', origin:'Colombia', region:'Nariño',
+    roaster:'Coffee Mameson', process:'Anaerobic', varietal:'Sidra', altitude:'2050 m',
+    roastLevel:'Light-Med', roastDate:'2026-05-02', rating:4,
+    notes:['Raspberry','Rosé','Cocoa','Brown sugar'],
+    description:'Funky, fruit-forward. Espresso shines at 1:2.5 in 26s.',
+    tone:['#d89090','#5a2828'], gramsLeft:80, weightBought:200, pricePaid:3200,
+    brews:[mkB('br3-1','2026-05-23',18.5,'2.2'),mkB('br3-2','2026-05-22',18.5,'2.2'),mkB('br3-3','2026-05-20',18.3,'2.3'),mkB('br3-4','2026-05-18',18.0,'2.4')],
+  },
+  {
+    id:'b4', name:'Tarrazú', origin:'Costa Rica', region:'San Marcos',
+    roaster:'Glitch Coffee', process:'Honey', varietal:'Caturra', altitude:'1800 m',
+    roastLevel:'Medium', roastDate:'2026-04-20', rating:4,
+    notes:['Caramel','Almond','Red apple','Cane sugar'],
+    description:'A daily driver. Forgiving, sweet, a soft cocoa finish.',
+    tone:['#c89876','#5a3820'], gramsLeft:250, weightBought:300, pricePaid:2100,
+    brews:[mkB('br4-1','2026-05-24',18.0,'2.0'),mkB('br4-2','2026-05-23',18.0,'2.0'),mkB('br4-3','2026-05-22',18.0,'2.0'),mkB('br4-4','2026-05-21',18.2,'2.1'),mkB('br4-5','2026-05-20',18.0,'2.0')],
+  },
+  {
+    id:'b5', name:'Gachatha AA', origin:'Kenya', region:'Nyeri',
+    roaster:'Mel Coffee Roasters', process:'Washed', varietal:'SL28 · SL34', altitude:'1820 m',
+    roastLevel:'Light', roastDate:'2026-04-01', rating:4,
+    notes:['Blackcurrant','Tomato','Hibiscus','Cane'],
+    description:'Big juicy acidity. Past its peak — use it up this week.',
+    tone:['#b46868','#3a1818'], gramsLeft:45, weightBought:200, pricePaid:2650,
+    brews:[mkB('br5-1','2026-05-22',18.0,'2.8'),mkB('br5-2','2026-05-18',17.5,'2.9')],
+  },
+  {
+    id:'b6', name:'Caturra Microlot', origin:'Guatemala', region:'Huehuetenango',
+    roaster:'Switch Coffee', process:'Washed', varietal:'Caturra', altitude:'1750 m',
+    roastLevel:'Medium', roastDate:'2026-05-21', rating:3,
+    notes:['Milk chocolate','Walnut','Orange peel'],
+    description:'Just landed — still resting. Try in 3 more days.',
+    tone:['#b48756','#4a2a14'], gramsLeft:300, weightBought:300, pricePaid:1900,
+    brews:[],
+  },
+];
+
+const GALLERY_PHOTOS = [
+  {id:'g1',tone:['#d4a574','#5a3a20'],label:'IMG_0421'},
+  {id:'g2',tone:['#e8c89a','#7a4827'],label:'IMG_0420'},
+  {id:'g3',tone:['#b07050','#3a1810'],label:'IMG_0419'},
+  {id:'g4',tone:['#f0d4a0','#a05530'],label:'IMG_0418'},
+  {id:'g5',tone:['#9a6840','#2a1408'],label:'IMG_0417'},
+  {id:'g6',tone:['#c89060','#5a2a14'],label:'IMG_0416'},
+  {id:'g7',tone:['#a87858','#4a2818'],label:'IMG_0415'},
+  {id:'g8',tone:['#d8a070','#6a3a1a'],label:'IMG_0414'},
+  {id:'g9',tone:['#b88868','#3a2010'],label:'IMG_0413'},
+];
+
+function roastInfo(roastDateStr) {
+  const d = new Date(roastDateStr);
+  const days = Math.max(0, Math.floor((TODAY - d) / 86400000));
+  let status, pct, label;
+  if (days < 7)       { status='resting'; label='Resting';     pct = days/7*0.33; }
+  else if (days <= 21){ status='peak';    label='Peak window'; pct = 0.33+(days-7)/14*0.34; }
+  else if (days <= 35){ status='mature';  label='Mature';      pct = 0.67+(days-21)/14*0.2; }
+  else                { status='past';    label='Past peak';   pct = Math.min(1,0.87+(days-35)/30*0.13); }
+  const daysToPeak = days < 7 ? 7 - days : null;
+  const daysToPast = (days>=7 && days<=21) ? 21-days : null;
+  return { days, status, label, pct, daysToPeak, daysToPast };
+}
+
+function formatRoastDate(s) {
+  return new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+function formatBrewDate(s) {
+  const diff = Math.floor((TODAY - new Date(s)) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  if (diff < 7)  return `${diff}d ago`;
+  return new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+function pricePerGram(bean) {
+  if (!bean.pricePaid || !bean.weightBought) return null;
+  return bean.pricePaid / bean.weightBought;
+}
+function pricePerShot(bean, dose=ESPRESSO_DOSE) {
+  const pg = pricePerGram(bean);
+  return pg == null ? null : pg * dose;
+}
+function formatYen(n) {
+  if (n == null || !Number.isFinite(n)) return '—';
+  return '฿' + Math.round(n).toLocaleString('en-US');
+}
+function formatYenFine(n) {
+  if (n == null || !Number.isFinite(n)) return '—';
+  return '฿' + (Math.round(n*10)/10).toFixed(1);
+}
+function comingIntoPeak(beans) {
+  return beans
+    .map(bean => ({ bean, info: roastInfo(bean.roastDate) }))
+    .filter(({info}) => info.daysToPeak != null && info.daysToPeak <= 6)
+    .sort((a,b) => a.info.daysToPeak - b.info.daysToPeak);
+}
+
+// ─── Design tokens ──────────────────────────────────────────────────────────
+const jp = {
+  paper: '#f4efe6',
+  ink:   '#1a1614',
+  ink2:  '#5a4f47',
+  ink3:  '#8b7d72',
+  rule:  'rgba(26,22,20,.12)',
+  card:  '#fbf7f0',
+  peak:  '#5a7a4f',
+  warn:  '#a8553a',
+  serif: '"Cormorant Garamond","Times New Roman",serif',
+  sans:  '"Hanken Grotesk",-apple-system,system-ui,sans-serif',
+  mono:  '"JetBrains Mono",ui-monospace,monospace',
+};
+
+// ─── Shared primitives ──────────────────────────────────────────────────────
+function JPBeanPhoto({ bean, size=56, filter=false, rounded=false, full=false }) {
+  const [c1,c2] = bean.tone;
+  const W = full ? '100%' : size;
+  const H = full ? '100%' : size;
+  const radius = rounded ? (full ? '50%' : size/2) : 2;
+  const cssFilter = filter ? 'sepia(.18) saturate(1.12) contrast(.96) brightness(.98)' : 'none';
+
+  if (bean.imageUrl) {
+    return (
+      <div style={{width:W,height:H,borderRadius:radius,overflow:'hidden',flexShrink:0,position:'relative'}}>
+        <img src={bean.imageUrl} style={{width:'100%',height:'100%',objectFit:'cover',filter:cssFilter,transition:'filter .5s ease',display:'block'}}/>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      width:W, height:H, borderRadius:radius,
+      background:`linear-gradient(135deg,${c1},${c2})`,
+      filter:cssFilter, transition:'filter .5s ease',
+      position:'relative', overflow:'hidden', flexShrink:0,
+    }}>
+      <svg width="100%" height="100%" viewBox="0 0 60 60" style={{position:'absolute',inset:0}}>
+        <ellipse cx="30" cy="30" rx="18" ry="22" transform="rotate(-22 30 30)" fill="rgba(0,0,0,.18)"/>
+        <path d="M30 12 Q24 30 30 48 Q36 30 30 12" stroke="rgba(0,0,0,.32)" strokeWidth="1.2" fill="none" transform="rotate(-22 30 30)"/>
+      </svg>
+      <div style={{position:'absolute',inset:0,backgroundImage:'radial-gradient(circle at 30% 30%,rgba(255,255,255,.18),transparent 60%)'}}/>
+    </div>
+  );
+}
+
+function JPStatusPill({ status, label, small=false }) {
+  const c = status==='peak' ? jp.peak : status==='past' ? jp.warn : jp.ink2;
+  return (
+    <span style={{
+      display:'inline-flex',alignItems:'center',gap:6,color:c,
+      fontFamily:jp.sans,fontSize:small?10:11,
+      letterSpacing:small?1.4:1.6,textTransform:'uppercase',fontWeight:500,
+    }}>
+      <span style={{
+        width:5,height:5,borderRadius:'50%',background:c,flexShrink:0,
+        animation:status==='peak'?'jpShimmer 2.4s ease-in-out infinite':'none',
+      }}/>
+      {label}
+    </span>
+  );
+}
+
+function JPStars({ rating, onChange, size=14, mounted=true }) {
+  return (
+    <div style={{display:'flex',gap:3}}>
+      {[1,2,3,4,5].map(i => (
+        <span key={i}
+          className={mounted?'jp-star-pop':''}
+          style={{animationDelay:`${i*.06}s`,cursor:onChange?'pointer':'default',display:'inline-flex'}}
+          onClick={()=>onChange&&onChange(i)}>
+          <svg width={size} height={size} viewBox="0 0 14 14">
+            <path d="M7 1l1.85 3.75 4.15.6-3 2.92.7 4.13L7 10.5l-3.7 1.95.7-4.13L1 5.35l4.15-.6L7 1z"
+              fill={i<=rating?jp.ink:'transparent'} stroke={jp.ink} strokeWidth="1" strokeLinejoin="round"/>
+          </svg>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function JPHeader({ left, right, center }) {
+  return (
+    <div style={{
+      display:'flex',alignItems:'center',justifyContent:'space-between',
+      padding:'14px 24px',minHeight:44,
+      fontFamily:jp.sans,fontSize:13,color:jp.ink,letterSpacing:.4,
+      flexShrink:0,
+    }}>
+      <div style={{minWidth:60}}>{left}</div>
+      <div style={{flex:1,textAlign:'center',textTransform:'uppercase',letterSpacing:2,fontSize:11}}>{center}</div>
+      <div style={{minWidth:60,textAlign:'right'}}>{right}</div>
+    </div>
+  );
+}
+
+// ─── Peak reminder strip ────────────────────────────────────────────────────
+function JPPeakReminder({ beans, onOpen }) {
+  return (
+    <div style={{padding:'12px 0 0'}}>
+      <div style={{padding:'0 24px 10px',display:'flex',alignItems:'center',gap:7}}>
+        <span style={{
+          width:5,height:5,borderRadius:'50%',background:jp.peak,flexShrink:0,
+          animation:'jpShimmer 2.4s ease-in-out infinite',
+        }}/>
+        <span style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.peak,fontWeight:500}}>
+          Coming into peak
+        </span>
+      </div>
+      <div style={{display:'flex',gap:10,padding:'0 24px 4px',overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+        {beans.map(({bean,info}) => (
+          <button key={bean.id} onClick={()=>onOpen(bean.id)} className="jp-tap" style={{
+            flexShrink:0,background:jp.card,border:`1px solid ${jp.rule}`,
+            borderRadius:2,padding:'10px 14px',cursor:'pointer',textAlign:'left',minWidth:130,
+          }}>
+            <div style={{fontFamily:jp.serif,fontSize:16,color:jp.ink,lineHeight:1.2}}>{bean.name}</div>
+            <div style={{fontFamily:jp.sans,fontSize:10,color:jp.peak,marginTop:5,letterSpacing:1.4,textTransform:'uppercase',fontWeight:500}}>
+              {info.daysToPeak===0 ? 'Peak today' : `Peak in ${info.daysToPeak}d`}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Home ───────────────────────────────────────────────────────────────────
+function JPHome({ beans, onOpen, onAdd, onSearch }) {
+  const [filter, setFilter] = React.useState('All');
+  const tabs = ['All','Peak','Resting','Archive'];
+  const list = beans.filter(b => {
+    const r = roastInfo(b.roastDate);
+    if (filter==='All') return true;
+    if (filter==='Peak') return r.status==='peak';
+    if (filter==='Resting') return r.status==='resting';
+    return r.status==='past'||r.status==='mature';
+  });
+  const upcoming = comingIntoPeak(beans);
+
+  return (
+    <div style={{height:'100%',position:'relative',overflow:'hidden',background:jp.paper}} className="jp-paper">
+      {/* scrollable area */}
+      <div style={{position:'absolute',inset:0,overflowY:'auto'}}>
+        <div style={{paddingTop:56}}>
+          {/* Masthead */}
+          <div style={{padding:'20px 24px 8px',position:'relative',zIndex:1}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+              <div>
+                <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:3,textTransform:'uppercase',color:jp.ink3}}>
+                  No. {beans.length.toString().padStart(2,'0')} · Personal Shelf
+                </div>
+                <h1 style={{fontFamily:jp.serif,fontWeight:500,fontSize:56,lineHeight:1,margin:'12px 0 4px',color:jp.ink,letterSpacing:-1}}>
+                  <span style={{fontStyle:'italic'}}>the</span> grind
+                </h1>
+                <div style={{fontFamily:jp.serif,fontSize:17,color:jp.ink2,fontStyle:'italic',marginTop:2}}>
+                  a quiet log of coffee
+                </div>
+              </div>
+              <button onClick={onSearch} className="jp-tap" style={{
+                marginTop:4,width:40,height:40,borderRadius:'50%',
+                background:'transparent',border:`1px solid ${jp.rule}`,cursor:'pointer',
+                display:'inline-flex',alignItems:'center',justifyContent:'center',color:jp.ink,
+              }}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                  <circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {upcoming.length>0 && <JPPeakReminder beans={upcoming} onOpen={onOpen}/>}
+
+          {/* Filter tabs */}
+          <div style={{borderTop:`1px solid ${jp.rule}`,marginTop:upcoming.length>0?8:24}}>
+            <div style={{display:'flex',padding:'14px 24px 8px',position:'relative',zIndex:1}}>
+              {tabs.map(t => (
+                <button key={t} className="jp-tap" onClick={()=>setFilter(t)} style={{
+                  background:'transparent',border:'none',padding:'6px 14px 6px 0',
+                  fontFamily:jp.sans,fontSize:12,letterSpacing:1.6,textTransform:'uppercase',
+                  color:filter===t?jp.ink:jp.ink3,fontWeight:filter===t?600:400,cursor:'pointer',position:'relative',
+                }}>
+                  {t}
+                  {filter===t && <span style={{position:'absolute',bottom:-2,left:0,right:14,height:1,background:jp.ink}}/>}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Bean list */}
+          <div className="jp-stagger" style={{padding:'0 24px 140px',position:'relative',zIndex:1}}>
+            {list.length===0 && (
+              <div style={{padding:'48px 0',textAlign:'center',fontFamily:jp.serif,fontStyle:'italic',fontSize:17,color:jp.ink3}}>
+                Nothing here yet.
+              </div>
+            )}
+            {list.map((bean,i) => {
+              const r = roastInfo(bean.roastDate);
+              return (
+                <div key={bean.id} className="jp-tap" onClick={()=>onOpen(bean.id)} style={{
+                  display:'flex',gap:18,padding:'20px 0',
+                  borderBottom:`1px solid ${jp.rule}`,cursor:'pointer',alignItems:'flex-start',
+                }}>
+                  <JPBeanPhoto bean={bean} size={72}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8}}>
+                      <div style={{fontFamily:jp.serif,fontSize:22,lineHeight:1.1,color:jp.ink,letterSpacing:-.2}}>{bean.name}</div>
+                      <div style={{fontFamily:jp.mono,fontSize:11,color:jp.ink3,letterSpacing:.5,flexShrink:0}}>{String(i+1).padStart(2,'0')}</div>
+                    </div>
+                    <div style={{fontFamily:jp.serif,fontSize:14,fontStyle:'italic',color:jp.ink2,marginTop:2}}>
+                      {bean.origin} · {bean.region}
+                    </div>
+                    <div style={{fontFamily:jp.sans,fontSize:11,color:jp.ink3,marginTop:6,letterSpacing:.3}}>
+                      {bean.roaster} — {bean.process}
+                    </div>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:10}}>
+                      <JPStatusPill status={r.status} label={`${r.label} · ${r.days}d`} small/>
+                      <JPStars rating={bean.rating} size={11}/>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* FAB — outside scroll, sticks to visible bottom */}
+      <button className="jp-tap" onClick={onAdd} style={{
+        position:'absolute',bottom:32,right:24,zIndex:10,
+        width:62,height:62,borderRadius:'50%',
+        background:jp.ink,color:jp.paper,border:'none',cursor:'pointer',
+        display:'flex',alignItems:'center',justifyContent:'center',
+        boxShadow:'0 8px 24px rgba(26,22,20,.25),0 2px 6px rgba(26,22,20,.18)',
+        fontFamily:jp.serif,fontSize:32,lineHeight:1,paddingBottom:4,
+      }}>+</button>
+    </div>
+  );
+}
+
+// ─── Detail ─────────────────────────────────────────────────────────────────
+function JPDetail({ bean, onBack, onLogBrew, onDelete }) {
+  const r = roastInfo(bean.roastDate);
+  const [rating, setRating] = React.useState(bean.rating);
+  const [mounted, setMounted] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  React.useEffect(()=>{ const t=setTimeout(()=>setMounted(true),100); return()=>clearTimeout(t); },[]);
+
+  const pg = pricePerGram(bean);
+  const ps = pricePerShot(bean);
+
+  return (
+    <div style={{height:'100%',background:jp.paper,position:'relative',overflow:'hidden'}} className="jp-paper">
+      <div style={{position:'absolute',inset:0,overflowY:'auto'}}>
+        <div style={{paddingTop:56}}>
+          <JPHeader
+            left={<button onClick={onBack} className="jp-tap" style={{background:'transparent',border:'none',cursor:'pointer',color:jp.ink,fontFamily:jp.sans,fontSize:13,padding:0}}>← Shelf</button>}
+            center="Tasting Card"
+            right={<span style={{fontFamily:jp.mono,fontSize:11,color:jp.ink3}}>{bean.id.toUpperCase()}</span>}
+          />
+
+          {/* Hero */}
+          <div className="jp-enter-fade" style={{padding:'8px 24px 0'}}>
+            <div style={{position:'relative',aspectRatio:'4/5',borderRadius:2,overflow:'hidden'}}>
+              <JPBeanPhoto bean={bean} full/>
+              <div style={{position:'absolute',inset:0,background:'linear-gradient(to bottom,transparent 50%,rgba(0,0,0,.4))'}}/>
+              <div style={{position:'absolute',bottom:16,left:16,right:16,color:'#f4efe6'}}>
+                <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,opacity:.85}}>{bean.varietal.toUpperCase()}</div>
+                <div style={{fontFamily:jp.serif,fontSize:14,fontStyle:'italic',marginTop:4,opacity:.9}}>{bean.altitude} · {bean.process}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Title */}
+          <div style={{padding:'24px 24px 0'}}>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:3,textTransform:'uppercase',color:jp.ink3}}>{bean.origin} — {bean.region}</div>
+            <h2 style={{fontFamily:jp.serif,fontWeight:500,fontSize:44,lineHeight:1,margin:'10px 0 6px',color:jp.ink,letterSpacing:-.6}}>{bean.name}</h2>
+            <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:17,color:jp.ink2}}>roasted by {bean.roaster}</div>
+          </div>
+
+          {/* Roast curve */}
+          <div style={{padding:'24px 24px 0'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10}}>
+              <span style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Roast Curve</span>
+              <JPStatusPill status={r.status} label={r.label}/>
+            </div>
+            <div style={{position:'relative',height:2,background:jp.rule,borderRadius:1}}>
+              <div className="jp-progress-fill" style={{
+                position:'absolute',inset:0,
+                background:r.status==='peak'?jp.peak:r.status==='past'?jp.warn:jp.ink,
+                '--p':r.pct,
+              }}/>
+              {[0.33,0.67].map((p,i)=>(
+                <div key={i} style={{position:'absolute',left:`${p*100}%`,top:-3,width:1,height:8,background:jp.ink3}}/>
+              ))}
+              <div className="jp-enter-fade" style={{
+                position:'absolute',left:`${r.pct*100}%`,top:'50%',
+                width:12,height:12,marginLeft:-6,marginTop:-6,borderRadius:'50%',
+                background:jp.paper,border:`2px solid ${jp.ink}`,animationDelay:'.6s',
+              }}/>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',marginTop:10,fontFamily:jp.mono,fontSize:10,color:jp.ink3,letterSpacing:.3}}>
+              <span>ROASTED {formatRoastDate(bean.roastDate).toUpperCase()}</span>
+              <span>D+{r.days}</span>
+              <span>PEAK 7—21D</span>
+            </div>
+          </div>
+
+          {/* Rating */}
+          <div style={{padding:'24px 24px 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Your rating</span>
+            <JPStars rating={rating} onChange={setRating} size={18} mounted={mounted}/>
+          </div>
+
+          {/* Description */}
+          <div style={{padding:'24px 24px 0'}}>
+            <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:19,lineHeight:1.45,color:jp.ink}}>"{bean.description}"</div>
+          </div>
+
+          {/* Tasting notes */}
+          <div style={{padding:'28px 24px 0'}}>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:10}}>Notes</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:12,alignItems:'center',rowGap:8}}>
+              {bean.notes.map((n,i)=>(
+                <React.Fragment key={n}>
+                  {i>0&&<span style={{color:jp.ink3}}>·</span>}
+                  <span style={{fontFamily:jp.serif,fontSize:18,color:jp.ink,fontStyle:'italic'}}>{n.toLowerCase()}</span>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+
+          {/* Specs grid */}
+          <div style={{padding:'28px 24px 0',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'20px 24px'}}>
+            {[
+              ['Process',   bean.process],
+              ['Varietal',  bean.varietal],
+              ['Altitude',  bean.altitude],
+              ['Roast',     bean.roastLevel],
+              ['Stock',     `${bean.gramsLeft} g`],
+              ['Roaster',   bean.roaster],
+              ['฿ / gram',  formatYenFine(pg)],
+              ['฿ / shot',  formatYen(ps) + (ps?` (${ESPRESSO_DOSE}g)`:'')],
+            ].map(([k,v])=>(
+              <div key={k}>
+                <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>{k}</div>
+                <div style={{fontFamily:jp.serif,fontSize:17,color:jp.ink,marginTop:4}}>{v}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Brew log history */}
+          {bean.brews.length>0 && (
+            <div style={{padding:'28px 24px 0'}}>
+              <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:12}}>Brew Log</div>
+              {bean.brews.slice(0,6).map(brew=>(
+                <div key={brew.id} style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'10px 0',borderBottom:`1px solid ${jp.rule}`}}>
+                  <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:14,color:jp.ink2}}>{formatBrewDate(brew.date)}</div>
+                  <div style={{display:'flex',gap:20}}>
+                    <span style={{fontFamily:jp.mono,fontSize:12,color:jp.ink}}>{brew.dose}g</span>
+                    <span style={{fontFamily:jp.mono,fontSize:12,color:jp.ink3}}>#{brew.grind}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* CTA */}
+          <div style={{padding:'32px 24px 56px',display:'flex',flexDirection:'column',gap:12}}>
+            <button className="jp-tap" onClick={onLogBrew} style={{
+              width:'100%',height:54,background:jp.ink,color:jp.paper,
+              border:'none',borderRadius:2,cursor:'pointer',
+              fontFamily:jp.sans,fontSize:12,letterSpacing:3,textTransform:'uppercase',
+            }}>
+              Log a Brew
+            </button>
+            {!confirmDelete
+              ? <button className="jp-tap" onClick={()=>setConfirmDelete(true)} style={{
+                  width:'100%',height:44,background:'transparent',color:jp.ink3,
+                  border:`1px solid ${jp.rule}`,borderRadius:2,cursor:'pointer',
+                  fontFamily:jp.sans,fontSize:11,letterSpacing:2,textTransform:'uppercase',
+                }}>
+                  Remove Bean
+                </button>
+              : <div style={{display:'flex',gap:10}}>
+                  <button className="jp-tap" onClick={()=>setConfirmDelete(false)} style={{
+                    flex:1,height:44,background:'transparent',color:jp.ink3,
+                    border:`1px solid ${jp.rule}`,borderRadius:2,cursor:'pointer',
+                    fontFamily:jp.sans,fontSize:11,letterSpacing:2,textTransform:'uppercase',
+                  }}>
+                    Cancel
+                  </button>
+                  <button className="jp-tap" onClick={onDelete} style={{
+                    flex:1,height:44,background:'#7a2a1a',color:'#f4efe6',
+                    border:'none',borderRadius:2,cursor:'pointer',
+                    fontFamily:jp.sans,fontSize:11,letterSpacing:2,textTransform:'uppercase',
+                  }}>
+                    Confirm Delete
+                  </button>
+                </div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Add flow ───────────────────────────────────────────────────────────────
+function JPAddFlow({ onClose }) {
+  const [step, setStep] = React.useState('gallery');
+  const [selected, setSelected] = React.useState(null);
+  const [useFilter, setUseFilter] = React.useState(true);
+
+  return (
+    <div className="jp-enter-up" style={{position:'absolute',inset:0,background:jp.paper,zIndex:10}}>
+      <div className="jp-paper" style={{position:'absolute',inset:0,display:'flex',flexDirection:'column'}}>
+        <JPHeader
+          left={step==='gallery'
+            ? <button onClick={onClose} className="jp-tap" style={{background:'transparent',border:'none',cursor:'pointer',color:jp.ink,fontFamily:jp.sans,fontSize:13,padding:0}}>Close</button>
+            : <button onClick={()=>setStep(step==='form'?'filter':'gallery')} className="jp-tap" style={{background:'transparent',border:'none',cursor:'pointer',color:jp.ink,fontFamily:jp.sans,fontSize:13,padding:0}}>← Back</button>
+          }
+          center={step==='gallery'?'Select Photo':step==='filter'?'Apply Filter':'New Entry'}
+          right={null}
+        />
+        <div style={{flex:1,overflow:'hidden',position:'relative'}}>
+          {step==='gallery' && <JPGallery onPick={p=>{setSelected(p);setStep('filter');}}/>}
+          {step==='filter' && <JPFilter photo={selected} useFilter={useFilter} setUseFilter={setUseFilter} onNext={()=>setStep('form')}/>}
+          {step==='form'   && <JPForm photo={selected} useFilter={useFilter} onSave={onClose}/>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function JPGallery({ onPick }) {
+  const inputRef = React.useRef(null);
+  const [loading, setLoading] = React.useState(false);
+
+  const openPicker = (useCamera) => {
+    const el = inputRef.current;
+    if (useCamera) el.setAttribute('capture', 'environment');
+    else el.removeAttribute('capture');
+    el.value = '';
+    el.click();
+  };
+
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setLoading(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setLoading(false);
+      onPick({ imageUrl: ev.target.result, label: file.name });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const BtnStyle = {
+    display:'flex', alignItems:'center', gap:16,
+    width:'100%', padding:'20px 24px', background:jp.card,
+    border:`1px solid ${jp.rule}`, borderRadius:2, cursor:'pointer',
+    textAlign:'left',
+  };
+  const IconBox = {
+    width:48, height:48, borderRadius:'50%', background:jp.paper,
+    border:`1px solid ${jp.rule}`, display:'flex', alignItems:'center',
+    justifyContent:'center', flexShrink:0,
+  };
+
+  return (
+    <div style={{height:'100%',display:'flex',flexDirection:'column',padding:'24px 24px 48px',gap:12}}>
+      <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:17,color:jp.ink2,marginBottom:8}}>
+        Choose a photo for this bean.
+      </div>
+
+      {/* Gallery */}
+      <button className="jp-tap" onClick={()=>openPicker(false)} style={BtnStyle}>
+        <div style={IconBox}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={jp.ink2} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+            <path d="M21 15l-5-5L5 21"/>
+          </svg>
+        </div>
+        <div>
+          <div style={{fontFamily:jp.serif,fontSize:19,color:jp.ink,letterSpacing:-.2}}>From Gallery</div>
+          <div style={{fontFamily:jp.sans,fontSize:12,color:jp.ink3,marginTop:3}}>Pick a photo from your library</div>
+        </div>
+      </button>
+
+      {/* Camera */}
+      <button className="jp-tap" onClick={()=>openPicker(true)} style={BtnStyle}>
+        <div style={IconBox}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={jp.ink2} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+        </div>
+        <div>
+          <div style={{fontFamily:jp.serif,fontSize:19,color:jp.ink,letterSpacing:-.2}}>Take a Photo</div>
+          <div style={{fontFamily:jp.sans,fontSize:12,color:jp.ink3,marginTop:3}}>Open camera directly</div>
+        </div>
+      </button>
+
+      {loading && (
+        <div style={{padding:'32px 0',textAlign:'center',fontFamily:jp.serif,fontStyle:'italic',fontSize:16,color:jp.ink3}}>
+          Loading photo…
+        </div>
+      )}
+
+      <input ref={inputRef} type="file" accept="image/*" onChange={handleFile} style={{display:'none'}}/>
+    </div>
+  );
+}
+
+function JPFilter({ photo, useFilter, setUseFilter, onNext }) {
+  const imgFilter = useFilter ? 'sepia(.22) saturate(1.18) contrast(.94) brightness(.97)' : 'none';
+  return (
+    <div style={{padding:'12px 24px 24px',height:'100%',display:'flex',flexDirection:'column',overflowY:'auto'}}>
+      <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:16,color:jp.ink2,marginBottom:16}}>
+        A subtle warmth, our house touch.
+      </div>
+
+      {/* Real photo preview */}
+      <div style={{position:'relative',borderRadius:2,overflow:'hidden',aspectRatio:'4/5',flexShrink:0,background:jp.ink}}>
+        <img src={photo.imageUrl} style={{
+          width:'100%',height:'100%',objectFit:'cover',
+          filter:imgFilter, transition:'filter .6s ease', display:'block',
+        }}/>
+        <div style={{
+          position:'absolute',top:12,left:12,
+          fontFamily:jp.mono,fontSize:10,color:'#fff',
+          background:'rgba(0,0,0,.35)',backdropFilter:'blur(4px)',
+          padding:'4px 8px',borderRadius:2,letterSpacing:.5,
+        }}>
+          {useFilter ? '✦ HOUSE FILTER' : 'ORIGINAL'}
+        </div>
+      </div>
+
+      <div style={{marginTop:24,padding:'20px 0',borderTop:`1px solid ${jp.rule}`,borderBottom:`1px solid ${jp.rule}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div>
+          <div style={{fontFamily:jp.serif,fontSize:20,color:jp.ink,letterSpacing:-.2}}>House Filter</div>
+          <div style={{fontFamily:jp.sans,fontSize:12,color:jp.ink3,marginTop:2}}>warm · soft · paper</div>
+        </div>
+        <button onClick={()=>setUseFilter(!useFilter)} className="jp-tap" style={{
+          width:52,height:30,borderRadius:15,border:'none',cursor:'pointer',
+          background:useFilter?jp.ink:'rgba(26,22,20,.15)',
+          position:'relative',padding:0,transition:'background .3s ease',
+        }}>
+          <div style={{
+            position:'absolute',top:3,left:useFilter?25:3,
+            width:24,height:24,borderRadius:'50%',background:jp.paper,
+            transition:'left .3s cubic-bezier(.34,1.56,.64,1)',
+            boxShadow:'0 1px 3px rgba(0,0,0,.2)',
+          }}/>
+        </button>
+      </div>
+      <div style={{flex:1}}/>
+      <button onClick={onNext} className="jp-tap" style={{
+        height:54,background:jp.ink,color:jp.paper,border:'none',borderRadius:2,
+        fontFamily:jp.sans,fontSize:12,letterSpacing:3,textTransform:'uppercase',cursor:'pointer',marginBottom:24,
+      }}>Continue</button>
+    </div>
+  );
+}
+
+function JPForm({ photo, useFilter, onSave }) {
+  const [rating, setRating] = React.useState(0);
+  const Row = ({label,placeholder})=>(
+    <div style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
+      <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:4}}>{label}</div>
+      <div style={{fontFamily:jp.serif,fontSize:19,color:jp.ink3,fontStyle:'italic'}}>{placeholder}</div>
+    </div>
+  );
+  return (
+    <div style={{padding:'12px 24px 24px',overflowY:'auto',height:'100%'}}>
+      <div style={{display:'flex',gap:16,alignItems:'flex-start',marginBottom:16}}>
+        <div style={{width:72,aspectRatio:'4/5',borderRadius:2,overflow:'hidden',flexShrink:0,background:jp.ink}}>
+          <img src={photo.imageUrl} style={{
+            width:'100%',height:'100%',objectFit:'cover',display:'block',
+            filter:useFilter?'sepia(.22) saturate(1.18) contrast(.94) brightness(.97)':'none',
+          }}/>
+        </div>
+        <div style={{flex:1,paddingTop:4}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Photo</div>
+          <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:14,color:jp.ink2,marginTop:4}}>{useFilter?'House filter · warm':'Original'}</div>
+        </div>
+      </div>
+      <div className="jp-stagger">
+        <Row label="Name" placeholder="e.g. Konga"/>
+        <Row label="Origin · Region" placeholder="Ethiopia, Yirgacheffe"/>
+        <Row label="Roaster" placeholder="Onibus Coffee"/>
+        <Row label="Process" placeholder="Washed"/>
+        <Row label="Roast Date" placeholder="May 24, 2026"/>
+        <div style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Rating</div>
+          <JPStars rating={rating} onChange={setRating} size={18}/>
+        </div>
+      </div>
+      <button onClick={onSave} className="jp-tap" style={{
+        width:'100%',marginTop:28,height:54,background:jp.ink,color:jp.paper,border:'none',borderRadius:2,
+        fontFamily:jp.sans,fontSize:12,letterSpacing:3,textTransform:'uppercase',cursor:'pointer',
+      }}>Add to Shelf</button>
+    </div>
+  );
+}
+
+// ─── Search overlay ──────────────────────────────────────────────────────────
+function JPSearch({ beans, onPick, onClose }) {
+  const [query, setQuery] = React.useState('');
+  const q = query.toLowerCase().trim();
+  const results = q
+    ? beans.filter(b =>
+        b.name.toLowerCase().includes(q) ||
+        b.origin.toLowerCase().includes(q) ||
+        b.roaster.toLowerCase().includes(q) ||
+        b.region.toLowerCase().includes(q) ||
+        b.notes.some(n=>n.toLowerCase().includes(q))
+      )
+    : beans;
+
+  const inputRef = React.useRef(null);
+  React.useEffect(()=>{ setTimeout(()=>inputRef.current&&inputRef.current.focus(), 80); },[]);
+
+  return (
+    <div className="jp-enter-fade jp-paper" style={{position:'absolute',inset:0,zIndex:20,display:'flex',flexDirection:'column'}}>
+      {/* Search bar */}
+      <div style={{
+        paddingTop:56,borderBottom:`1px solid ${jp.rule}`,
+        display:'flex',alignItems:'center',gap:12,padding:'56px 24px 14px',
+        flexShrink:0,
+      }}>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={jp.ink3} strokeWidth="1.4" strokeLinecap="round" style={{flexShrink:0}}>
+          <circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/>
+        </svg>
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={e=>setQuery(e.target.value)}
+          placeholder="Bean, origin, roaster…"
+          style={{
+            flex:1,border:'none',background:'transparent',
+            fontFamily:jp.serif,fontSize:20,color:jp.ink,padding:0,
+          }}
+        />
+        <button onClick={onClose} style={{
+          background:'transparent',border:'none',cursor:'pointer',
+          fontFamily:jp.sans,fontSize:13,color:jp.ink,padding:0,flexShrink:0,
+        }}>Cancel</button>
+      </div>
+
+      {/* Results */}
+      <div style={{flex:1,overflowY:'auto'}}>
+        {!q && (
+          <div style={{padding:'12px 24px 4px',fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>
+            All beans
+          </div>
+        )}
+        {q && results.length===0 && (
+          <div style={{padding:'64px 24px',textAlign:'center',fontFamily:jp.serif,fontStyle:'italic',fontSize:18,color:jp.ink3}}>
+            Nothing found
+          </div>
+        )}
+        {results.map(bean=>{
+          const r = roastInfo(bean.roastDate);
+          return (
+            <div key={bean.id} onClick={()=>onPick(bean.id)} className="jp-tap" style={{
+              display:'flex',gap:16,padding:'16px 24px',
+              borderBottom:`1px solid ${jp.rule}`,cursor:'pointer',alignItems:'center',
+            }}>
+              <JPBeanPhoto bean={bean} size={44}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontFamily:jp.serif,fontSize:19,color:jp.ink,lineHeight:1.2}}>{bean.name}</div>
+                <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:13,color:jp.ink2,marginTop:2}}>{bean.origin} · {bean.roaster}</div>
+              </div>
+              <JPStatusPill status={r.status} label={r.label} small/>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Log brew sheet ──────────────────────────────────────────────────────────
+function JPLogBrewSheet({ bean, onSave, onClose }) {
+  const [dose,  setDose]  = React.useState('18.0');
+  const [grind, setGrind] = React.useState(
+    bean.brews.length>0 ? bean.brews[0].grind : ''
+  );
+
+  const pg = pricePerGram(bean);
+  const shotCost = pg && parseFloat(dose) ? pg * parseFloat(dose) : null;
+
+  const save = () => {
+    const d = parseFloat(dose);
+    if (!d || !grind.trim()) return;
+    onSave(d, grind.trim());
+  };
+
+  return (
+    <div style={{position:'absolute',inset:0,zIndex:20}}>
+      {/* backdrop */}
+      <div onClick={onClose} style={{position:'absolute',inset:0,background:'rgba(26,22,20,.45)',backdropFilter:'blur(2px)'}}/>
+      {/* sheet */}
+      <div className="jp-enter-up jp-paper" style={{
+        position:'absolute',bottom:0,left:0,right:0,
+        borderRadius:'12px 12px 0 0',padding:'28px 24px 48px',
+      }}>
+        {/* handle */}
+        <div style={{position:'absolute',top:10,left:'50%',transform:'translateX(-50%)',width:36,height:4,borderRadius:2,background:jp.rule}}/>
+
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:24}}>
+          <div>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Brew Log</div>
+            <div style={{fontFamily:jp.serif,fontSize:22,color:jp.ink,marginTop:4,letterSpacing:-.2}}>{bean.name}</div>
+          </div>
+          <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:22,color:jp.ink3,lineHeight:1,cursor:'pointer'}}>×</button>
+        </div>
+
+        {/* Dose */}
+        <div style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:16,marginBottom:16}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:8}}>Dose (g)</div>
+          <input
+            type="number" inputMode="decimal" step="0.1"
+            value={dose} onChange={e=>setDose(e.target.value)}
+            style={{
+              width:'100%',border:'none',background:'transparent',
+              fontFamily:jp.serif,fontSize:36,color:jp.ink,padding:0,
+            }}
+          />
+          {shotCost!=null && (
+            <div style={{fontFamily:jp.sans,fontSize:11,color:jp.ink3,marginTop:4}}>
+              ≈ {formatYen(shotCost)} this shot
+            </div>
+          )}
+        </div>
+
+        {/* Grind */}
+        <div style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:16,marginBottom:24}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:8}}>Grind Setting</div>
+          <input
+            type="text" inputMode="decimal"
+            placeholder="e.g. 2.5"
+            value={grind} onChange={e=>setGrind(e.target.value)}
+            style={{
+              width:'100%',border:'none',background:'transparent',
+              fontFamily:jp.serif,fontSize:36,color:jp.ink,padding:0,
+            }}
+          />
+        </div>
+
+        <button onClick={save} className="jp-tap" style={{
+          width:'100%',height:54,background:dose&&grind?jp.ink:'rgba(26,22,20,.2)',
+          color:jp.paper,border:'none',borderRadius:2,cursor:'pointer',
+          fontFamily:jp.sans,fontSize:12,letterSpacing:3,textTransform:'uppercase',
+          transition:'background .2s',
+        }}>
+          Save Brew
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── App root ────────────────────────────────────────────────────────────────
+function AppJapandi() {
+  const [beans, setBeans] = React.useState(() => {
+    try {
+      const s = localStorage.getItem('thegrind-beans');
+      return s ? JSON.parse(s) : INITIAL_BEANS;
+    } catch { return INITIAL_BEANS; }
+  });
+  const [view,  setView]  = React.useState({ name:'home', bean:null });
+  const [adding,    setAdding]    = React.useState(false);
+  const [searching, setSearching] = React.useState(false);
+  const [logBrewFor, setLogBrewFor] = React.useState(null);
+
+  React.useEffect(() => {
+    try { localStorage.setItem('thegrind-beans', JSON.stringify(beans)); } catch {}
+  }, [beans]);
+
+  const open = id => setView({ name:'detail', bean:id });
+
+  const addBrew = (beanId, dose, grind) => {
+    setBeans(bs => bs.map(b => b.id!==beanId ? b : {
+      ...b,
+      brews: [{ id:'br-'+(++_brewId), date:TODAY.toISOString().slice(0,10), dose, grind }, ...b.brews],
+      gramsLeft: Math.max(0, b.gramsLeft - dose),
+    }));
+    setLogBrewFor(null);
+  };
+
+  const deleteBean = (beanId) => {
+    setBeans(bs => bs.filter(b => b.id !== beanId));
+    setView({ name:'home', bean:null });
+  };
+
+  const currentBean = view.bean ? beans.find(b=>b.id===view.bean) : null;
+
+  return (
+    <div style={{width:'100%',height:'100%',position:'relative',overflow:'hidden',background:jp.paper}}>
+      {/* Home / Detail screens */}
+      <div className={view.name==='detail'?'jp-screen jp-enter-right':'jp-screen'} key={view.name}>
+        {view.name==='home'
+          ? <JPHome beans={beans} onOpen={open} onAdd={()=>setAdding(true)} onSearch={()=>setSearching(true)}/>
+          : <JPDetail bean={currentBean} onBack={()=>setView({name:'home',bean:null})} onLogBrew={()=>setLogBrewFor(currentBean.id)} onDelete={()=>deleteBean(currentBean.id)}/>
+        }
+      </div>
+
+      {/* Overlays */}
+      {adding    && <JPAddFlow onClose={()=>setAdding(false)}/>}
+      {searching && <JPSearch beans={beans} onPick={id=>{setSearching(false);open(id);}} onClose={()=>setSearching(false)}/>}
+      {logBrewFor && (
+        <JPLogBrewSheet
+          bean={beans.find(b=>b.id===logBrewFor)}
+          onSave={(dose,grind)=>addBrew(logBrewFor,dose,grind)}
+          onClose={()=>setLogBrewFor(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<AppJapandi/>);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    const reg = await navigator.serviceWorker.register('./sw.js');
+    // Check for SW updates every time the app is opened
+    reg.addEventListener('updatefound', () => {
+      const newSW = reg.installing;
+      newSW.addEventListener('statechange', () => {
+        // New SW installed and activated — reload to use it
+        if (newSW.state === 'activated' && navigator.serviceWorker.controller) {
+          window.location.reload();
+        }
+      });
+    });
+  });
+}
+</script>
+</body>
+</html>
