@@ -79,10 +79,16 @@
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
 <script type="text/babel" data-presets="react">
+// ─── Supabase ──────────────────────────────────────────────────────────────
+const SUPABASE_URL      = 'https://cgvtlmqvxbobudzkyrcc.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_83YqgHj9bkdnCPPsFLoEDQ_h4kmVx6d';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 // ─── Data ──────────────────────────────────────────────────────────────────
-const TODAY = new Date('2026-05-24');
+const TODAY = new Date();
 const ESPRESSO_DOSE = 18;
 let _brewId = 0;
 const mkB = (id, date, dose, grind) => ({ id, date, dose: +dose, grind });
@@ -144,17 +150,6 @@ const INITIAL_BEANS = [
   },
 ];
 
-const GALLERY_PHOTOS = [
-  {id:'g1',tone:['#d4a574','#5a3a20'],label:'IMG_0421'},
-  {id:'g2',tone:['#e8c89a','#7a4827'],label:'IMG_0420'},
-  {id:'g3',tone:['#b07050','#3a1810'],label:'IMG_0419'},
-  {id:'g4',tone:['#f0d4a0','#a05530'],label:'IMG_0418'},
-  {id:'g5',tone:['#9a6840','#2a1408'],label:'IMG_0417'},
-  {id:'g6',tone:['#c89060','#5a2a14'],label:'IMG_0416'},
-  {id:'g7',tone:['#a87858','#4a2818'],label:'IMG_0415'},
-  {id:'g8',tone:['#d8a070','#6a3a1a'],label:'IMG_0414'},
-  {id:'g9',tone:['#b88868','#3a2010'],label:'IMG_0413'},
-];
 
 function roastInfo(roastDateStr) {
   const d = new Date(roastDateStr);
@@ -200,6 +195,36 @@ function comingIntoPeak(beans) {
     .map(bean => ({ bean, info: roastInfo(bean.roastDate) }))
     .filter(({info}) => info.daysToPeak != null && info.daysToPeak <= 6)
     .sort((a,b) => a.info.daysToPeak - b.info.daysToPeak);
+}
+
+function suggestGrind(bean) {
+  const pts = [];
+  (bean.bags || []).forEach(bag => {
+    const roast = new Date(bag.roastDate);
+    (bag.brews || []).forEach(brew => {
+      const days = Math.floor((new Date(brew.date) - roast) / 86400000);
+      const g = parseFloat(brew.grind);
+      if (!isNaN(g) && days >= 0) pts.push({ days, grind: g });
+    });
+  });
+  const roast = new Date(bean.roastDate);
+  (bean.brews || []).forEach(brew => {
+    const days = Math.floor((new Date(brew.date) - roast) / 86400000);
+    const g = parseFloat(brew.grind);
+    if (!isNaN(g) && days >= 0) pts.push({ days, grind: g });
+  });
+  if (pts.length < 2) return null;
+  const n  = pts.length;
+  const mx = pts.reduce((s,p)=>s+p.days,0)/n;
+  const my = pts.reduce((s,p)=>s+p.grind,0)/n;
+  const num = pts.reduce((s,p)=>s+(p.days-mx)*(p.grind-my),0);
+  const den = pts.reduce((s,p)=>s+(p.days-mx)**2,0);
+  const todayDays = Math.floor((TODAY - new Date(bean.roastDate))/86400000);
+  if (den===0) return { suggested: Math.round(Math.max(0.5,Math.min(11,my))*10)/10, dataPoints: n, bags: (bean.bags||[]).length };
+  const slope = num/den;
+  const raw = my - slope*(mx - todayDays);
+  const suggested = Math.round(Math.max(0.5,Math.min(11,raw))*10)/10;
+  return { suggested, dataPoints: n, bags: (bean.bags||[]).length };
 }
 
 // ─── Design tokens ──────────────────────────────────────────────────────────
@@ -330,7 +355,7 @@ function JPPeakReminder({ beans, onOpen }) {
 }
 
 // ─── Home ───────────────────────────────────────────────────────────────────
-function JPHome({ beans, onOpen, onAdd, onSearch }) {
+function JPHome({ beans, onOpen, onAdd, onSearch, onExport, syncing }) {
   const [filter, setFilter] = React.useState('All');
   const tabs = ['All','Peak','Resting','Archive'];
   const list = beans.filter(b => {
@@ -351,8 +376,13 @@ function JPHome({ beans, onOpen, onAdd, onSearch }) {
           <div style={{padding:'20px 24px 8px',position:'relative',zIndex:1}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
               <div>
-                <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:3,textTransform:'uppercase',color:jp.ink3}}>
+                <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:3,textTransform:'uppercase',color:jp.ink3,display:'flex',alignItems:'center',gap:7}}>
                   No. {beans.length.toString().padStart(2,'0')} · Personal Shelf
+                  <span style={{
+                    width:5,height:5,borderRadius:'50%',flexShrink:0,
+                    background:syncing?'#c8922a':jp.peak,
+                    animation:syncing?'jpShimmer 1s ease-in-out infinite':'none',
+                  }}/>
                 </div>
                 <h1 style={{fontFamily:jp.serif,fontWeight:500,fontSize:56,lineHeight:1,margin:'12px 0 4px',color:jp.ink,letterSpacing:-1}}>
                   <span style={{fontStyle:'italic'}}>the</span> grind
@@ -361,15 +391,21 @@ function JPHome({ beans, onOpen, onAdd, onSearch }) {
                   a quiet log of coffee
                 </div>
               </div>
-              <button onClick={onSearch} className="jp-tap" style={{
-                marginTop:4,width:40,height:40,borderRadius:'50%',
-                background:'transparent',border:`1px solid ${jp.rule}`,cursor:'pointer',
-                display:'inline-flex',alignItems:'center',justifyContent:'center',color:jp.ink,
-              }}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                  <circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/>
-                </svg>
-              </button>
+              <div style={{display:'flex',flexDirection:'column',gap:10,alignItems:'flex-end',marginTop:4}}>
+                <button onClick={onSearch} className="jp-tap" style={{
+                  width:40,height:40,borderRadius:'50%',
+                  background:'transparent',border:`1px solid ${jp.rule}`,cursor:'pointer',
+                  display:'inline-flex',alignItems:'center',justifyContent:'center',color:jp.ink,
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                    <circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/>
+                  </svg>
+                </button>
+                <button onClick={onExport} style={{
+                  background:'transparent',border:'none',cursor:'pointer',padding:0,
+                  fontFamily:jp.sans,fontSize:9,color:jp.ink3,letterSpacing:1.6,textTransform:'uppercase',
+                }}>Export ↓</button>
+              </div>
             </div>
           </div>
 
@@ -418,7 +454,9 @@ function JPHome({ beans, onOpen, onAdd, onSearch }) {
                       {bean.roaster} — {bean.process}
                     </div>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:10}}>
-                      <JPStatusPill status={r.status} label={`${r.label} · ${r.days}d`} small/>
+                      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                        <JPStatusPill status={r.status} label={`${r.label} · ${r.days}d`} small/>
+                      </div>
                       <JPStars rating={bean.rating} size={11}/>
                     </div>
                   </div>
@@ -442,8 +480,96 @@ function JPHome({ beans, onOpen, onAdd, onSearch }) {
   );
 }
 
+// ─── Grind trend chart ──────────────────────────────────────────────────────
+function JPGrindChart({ bean }) {
+  const pts = [];
+  (bean.bags||[]).forEach(bag => {
+    const roast = new Date(bag.roastDate);
+    (bag.brews||[]).forEach(brew => {
+      const days = Math.floor((new Date(brew.date)-roast)/86400000);
+      const g = parseFloat(brew.grind);
+      if (!isNaN(g) && days>=0) pts.push({days,grind:g,past:true});
+    });
+  });
+  const roast = new Date(bean.roastDate);
+  (bean.brews||[]).forEach(brew => {
+    const days = Math.floor((new Date(brew.date)-roast)/86400000);
+    const g = parseFloat(brew.grind);
+    if (!isNaN(g) && days>=0) pts.push({days,grind:g,past:false});
+  });
+  if (pts.length < 2) return null;
+
+  const suggest = suggestGrind(bean);
+  const todayDays = Math.floor((TODAY-new Date(bean.roastDate))/86400000);
+  const xs = pts.map(p=>p.days), ys = pts.map(p=>p.grind);
+  const minX=Math.min(...xs), maxX=Math.max(Math.max(...xs),todayDays);
+  const minY=Math.min(...ys)-0.2, maxY=Math.max(...ys)+0.2;
+  const rX=maxX-minX||1, rY=maxY-minY||0.5;
+  const W=100,H=64,pad={l:22,r:10,t:6,b:18};
+  const iW=W-pad.l-pad.r, iH=H-pad.t-pad.b;
+  const px=d=>pad.l+((d-minX)/rX)*iW;
+  const py=g=>pad.t+iH-((g-minY)/rY)*iH;
+
+  let line=null;
+  if (suggest && pts.length>=2) {
+    const n=pts.length, mx=xs.reduce((s,x)=>s+x,0)/n, my=ys.reduce((s,y)=>s+y,0)/n;
+    const num=pts.reduce((s,p)=>s+(p.days-mx)*(p.grind-my),0);
+    const den=pts.reduce((s,p)=>s+(p.days-mx)**2,0);
+    if (den!==0){const sl=num/den,ic=my-sl*mx;line={x1:px(minX),y1:py(ic+sl*minX),x2:px(maxX),y2:py(ic+sl*maxX)};}
+  }
+
+  const yStep=rY>0.7?0.5:0.2;
+  const yTicks=[];
+  for(let y=Math.ceil((minY+0.05)/yStep)*yStep;y<=maxY-0.05;y+=yStep) yTicks.push(Math.round(y*10)/10);
+
+  return (
+    <div style={{padding:'28px 24px 0'}}>
+      <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:12,display:'flex',gap:8,alignItems:'center'}}>
+        Grind Trend
+        {(bean.bags||[]).length>0&&<span style={{opacity:.55,fontSize:9,fontWeight:400}}>· cross-bag</span>}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',overflow:'visible',display:'block'}}>
+        {yTicks.map(y=>(
+          <g key={y}>
+            <line x1={pad.l} y1={py(y)} x2={W-pad.r} y2={py(y)} stroke={jp.rule} strokeWidth=".3"/>
+            <text x={pad.l-3} y={py(y)} textAnchor="end" dominantBaseline="middle" fill={jp.ink3} fontSize="4" fontFamily="'JetBrains Mono',monospace">{y}</text>
+          </g>
+        ))}
+        {line&&<line {...line} stroke={jp.ink} strokeWidth=".7" strokeDasharray="1.5 1" opacity=".28"/>}
+        {suggest&&<>
+          <line x1={px(todayDays)} y1={pad.t} x2={px(todayDays)} y2={pad.t+iH} stroke={jp.peak} strokeWidth=".4" strokeDasharray="1 1" opacity=".5"/>
+          <circle cx={px(todayDays)} cy={py(suggest.suggested)} r="2" fill={jp.peak}/>
+          <text x={px(todayDays)+2.5} y={py(suggest.suggested)} dominantBaseline="middle" fill={jp.peak} fontSize="3.5" fontFamily="'JetBrains Mono',monospace">{suggest.suggested}</text>
+        </>}
+        {pts.map((p,i)=>(
+          <circle key={i} cx={px(p.days)} cy={py(p.grind)} r="1.6"
+            fill={p.past?'transparent':jp.ink} stroke={jp.ink} strokeWidth={p.past?.5:.3} opacity={p.past?.42:1}/>
+        ))}
+        <line x1={pad.l} y1={pad.t+iH} x2={W-pad.r} y2={pad.t+iH} stroke={jp.rule} strokeWidth=".4"/>
+        <text x={pad.l} y={H-1} fill={jp.ink3} fontSize="3.5" fontFamily="'JetBrains Mono',monospace">D+{minX}</text>
+        <text x={W-pad.r} y={H-1} textAnchor="end" fill={jp.ink3} fontSize="3.5" fontFamily="'JetBrains Mono',monospace">D+{maxX}</text>
+      </svg>
+      <div style={{display:'flex',gap:14,marginTop:10}}>
+        <span style={{display:'flex',alignItems:'center',gap:4,fontFamily:jp.sans,fontSize:9,letterSpacing:1.2,textTransform:'uppercase',color:jp.ink3}}>
+          <span style={{width:6,height:6,borderRadius:'50%',background:jp.ink,display:'inline-block'}}/>This bag
+        </span>
+        {(bean.bags||[]).length>0&&(
+          <span style={{display:'flex',alignItems:'center',gap:4,fontFamily:jp.sans,fontSize:9,letterSpacing:1.2,textTransform:'uppercase',color:jp.ink3}}>
+            <span style={{width:6,height:6,borderRadius:'50%',border:`1px solid ${jp.ink}`,display:'inline-block',opacity:.42}}/>Past
+          </span>
+        )}
+        {suggest&&(
+          <span style={{display:'flex',alignItems:'center',gap:4,fontFamily:jp.sans,fontSize:9,letterSpacing:1.2,textTransform:'uppercase',color:jp.peak}}>
+            <span style={{width:6,height:6,borderRadius:'50%',background:jp.peak,display:'inline-block'}}/>Today
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Detail ─────────────────────────────────────────────────────────────────
-function JPDetail({ bean, onBack, onLogBrew, onDelete }) {
+function JPDetail({ bean, onBack, onLogBrew, onRefreshBag, onEditBrew, onDelete, onRatingChange, onEditBean }) {
   const r = roastInfo(bean.roastDate);
   const [rating, setRating] = React.useState(bean.rating);
   const [mounted, setMounted] = React.useState(false);
@@ -452,6 +578,8 @@ function JPDetail({ bean, onBack, onLogBrew, onDelete }) {
 
   const pg = pricePerGram(bean);
   const ps = pricePerShot(bean);
+  const currentShots = bean.brews.length;
+  const totalShots = currentShots + (bean.bags||[]).reduce((s,b)=>s+(b.brews||[]).length,0);
 
   return (
     <div style={{height:'100%',background:jp.paper,position:'relative',overflow:'hidden'}} className="jp-paper">
@@ -460,7 +588,7 @@ function JPDetail({ bean, onBack, onLogBrew, onDelete }) {
           <JPHeader
             left={<button onClick={onBack} className="jp-tap" style={{background:'transparent',border:'none',cursor:'pointer',color:jp.ink,fontFamily:jp.sans,fontSize:13,padding:0}}>← Shelf</button>}
             center="Tasting Card"
-            right={<span style={{fontFamily:jp.mono,fontSize:11,color:jp.ink3}}>{bean.id.toUpperCase()}</span>}
+            right={<button onClick={onEditBean} className="jp-tap" style={{background:'transparent',border:'none',cursor:'pointer',color:jp.ink3,fontFamily:jp.sans,fontSize:12,letterSpacing:1.4,textTransform:'uppercase',padding:0}}>Edit</button>}
           />
 
           {/* Hero */}
@@ -513,26 +641,30 @@ function JPDetail({ bean, onBack, onLogBrew, onDelete }) {
           {/* Rating */}
           <div style={{padding:'24px 24px 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <span style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Your rating</span>
-            <JPStars rating={rating} onChange={setRating} size={18} mounted={mounted}/>
+            <JPStars rating={rating} onChange={v=>{setRating(v);onRatingChange&&onRatingChange(v);}} size={18} mounted={mounted}/>
           </div>
 
           {/* Description */}
-          <div style={{padding:'24px 24px 0'}}>
-            <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:19,lineHeight:1.45,color:jp.ink}}>"{bean.description}"</div>
-          </div>
+          {bean.description && (
+            <div style={{padding:'24px 24px 0'}}>
+              <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:19,lineHeight:1.45,color:jp.ink}}>"{bean.description}"</div>
+            </div>
+          )}
 
           {/* Tasting notes */}
-          <div style={{padding:'28px 24px 0'}}>
-            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:10}}>Notes</div>
-            <div style={{display:'flex',flexWrap:'wrap',gap:12,alignItems:'center',rowGap:8}}>
-              {bean.notes.map((n,i)=>(
-                <React.Fragment key={n}>
-                  {i>0&&<span style={{color:jp.ink3}}>·</span>}
-                  <span style={{fontFamily:jp.serif,fontSize:18,color:jp.ink,fontStyle:'italic'}}>{n.toLowerCase()}</span>
-                </React.Fragment>
-              ))}
+          {bean.notes && bean.notes.length > 0 && (
+            <div style={{padding:'28px 24px 0'}}>
+              <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:10}}>Notes</div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:12,alignItems:'center',rowGap:8}}>
+                {bean.notes.map((n,i)=>(
+                  <React.Fragment key={n}>
+                    {i>0&&<span style={{color:jp.ink3}}>·</span>}
+                    <span style={{fontFamily:jp.serif,fontSize:18,color:jp.ink,fontStyle:'italic'}}>{n.toLowerCase()}</span>
+                  </React.Fragment>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Specs grid */}
           <div style={{padding:'28px 24px 0',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'20px 24px'}}>
@@ -542,7 +674,7 @@ function JPDetail({ bean, onBack, onLogBrew, onDelete }) {
               ['Altitude',  bean.altitude],
               ['Roast',     bean.roastLevel],
               ['Stock',     `${bean.gramsLeft} g`],
-              ['Roaster',   bean.roaster],
+              ['Shots',     totalShots>currentShots ? `${currentShots} · ${totalShots} total` : String(currentShots)],
               ['฿ / gram',  formatYenFine(pg)],
               ['฿ / shot',  formatYen(ps) + (ps?` (${ESPRESSO_DOSE}g)`:'')],
             ].map(([k,v])=>(
@@ -553,14 +685,22 @@ function JPDetail({ bean, onBack, onLogBrew, onDelete }) {
             ))}
           </div>
 
+          <JPGrindChart bean={bean}/>
+
           {/* Brew log history */}
           {bean.brews.length>0 && (
             <div style={{padding:'28px 24px 0'}}>
               <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:12}}>Brew Log</div>
-              {bean.brews.slice(0,6).map(brew=>(
-                <div key={brew.id} style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'10px 0',borderBottom:`1px solid ${jp.rule}`}}>
-                  <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:14,color:jp.ink2}}>{formatBrewDate(brew.date)}</div>
-                  <div style={{display:'flex',gap:20}}>
+              {bean.brews.slice(0,8).map(brew=>(
+                <div key={brew.id} onClick={()=>onEditBrew&&onEditBrew(brew)} className="jp-tap" style={{
+                  display:'flex',justifyContent:'space-between',alignItems:'center',
+                  padding:'10px 0',borderBottom:`1px solid ${jp.rule}`,cursor:'pointer',
+                }}>
+                  <div>
+                    <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:14,color:jp.ink2}}>{formatBrewDate(brew.date)}</div>
+                    {brew.note&&<div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:12,color:jp.ink3,marginTop:2}}>{brew.note}</div>}
+                  </div>
+                  <div style={{display:'flex',gap:20,alignItems:'center'}}>
                     <span style={{fontFamily:jp.mono,fontSize:12,color:jp.ink}}>{brew.dose}g</span>
                     <span style={{fontFamily:jp.mono,fontSize:12,color:jp.ink3}}>#{brew.grind}</span>
                   </div>
@@ -570,13 +710,20 @@ function JPDetail({ bean, onBack, onLogBrew, onDelete }) {
           )}
 
           {/* CTA */}
-          <div style={{padding:'32px 24px 56px',display:'flex',flexDirection:'column',gap:12}}>
+          <div style={{padding:'32px 24px 0',display:'flex',flexDirection:'column',gap:12}}>
             <button className="jp-tap" onClick={onLogBrew} style={{
               width:'100%',height:54,background:jp.ink,color:jp.paper,
               border:'none',borderRadius:2,cursor:'pointer',
               fontFamily:jp.sans,fontSize:12,letterSpacing:3,textTransform:'uppercase',
             }}>
               Log a Brew
+            </button>
+            <button className="jp-tap" onClick={onRefreshBag} style={{
+              width:'100%',height:44,background:'transparent',color:jp.ink2,
+              border:`1px solid ${jp.rule}`,borderRadius:2,cursor:'pointer',
+              fontFamily:jp.sans,fontSize:11,letterSpacing:2,textTransform:'uppercase',
+            }}>
+              New Bag →
             </button>
             {!confirmDelete
               ? <button className="jp-tap" onClick={()=>setConfirmDelete(true)} style={{
@@ -604,6 +751,52 @@ function JPDetail({ bean, onBack, onLogBrew, onDelete }) {
                 </div>
             }
           </div>
+
+          {/* Bag history */}
+          {(bean.bags||[]).length>0 ? (
+            <div style={{padding:'28px 24px 56px'}}>
+              <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:12}}>
+                Bag History · {(bean.bags||[]).length} past {(bean.bags||[]).length===1?'bag':'bags'}
+              </div>
+              {[...(bean.bags||[])].reverse().map((bag,i,arr)=>{
+                const ppg = bag.pricePaid&&bag.weightBought ? bag.pricePaid/bag.weightBought : null;
+                const bagNum = arr.length - i;
+                return (
+                  <div key={bag.id} style={{
+                    padding:'14px 16px',marginBottom:8,borderRadius:2,
+                    border:`1px solid ${jp.rule}`,opacity:.6,
+                  }}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10}}>
+                      <span style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>
+                        Bag #{bagNum} · {formatRoastDate(bag.roastDate)}
+                      </span>
+                      <span style={{fontFamily:jp.mono,fontSize:10,color:jp.ink3}}>
+                        {(bag.brews||[]).length} brew{(bag.brews||[]).length!==1?'s':''}
+                      </span>
+                    </div>
+                    <div style={{display:'flex',gap:20,flexWrap:'wrap'}}>
+                      <div>
+                        <div style={{fontFamily:jp.serif,fontSize:16,color:jp.ink}}>{bag.weightBought}g</div>
+                        <div style={{fontFamily:jp.sans,fontSize:9,color:jp.ink3,marginTop:1,letterSpacing:1.4,textTransform:'uppercase'}}>Size</div>
+                      </div>
+                      <div>
+                        <div style={{fontFamily:jp.serif,fontSize:16,color:jp.ink}}>{formatYen(bag.pricePaid)}</div>
+                        <div style={{fontFamily:jp.sans,fontSize:9,color:jp.ink3,marginTop:1,letterSpacing:1.4,textTransform:'uppercase'}}>Paid</div>
+                      </div>
+                      {ppg&&<div>
+                        <div style={{fontFamily:jp.serif,fontSize:16,color:jp.ink}}>{formatYenFine(ppg)}/g</div>
+                        <div style={{fontFamily:jp.sans,fontSize:9,color:jp.ink3,marginTop:1,letterSpacing:1.4,textTransform:'uppercase'}}>Per gram</div>
+                      </div>}
+                      {ppg&&<div>
+                        <div style={{fontFamily:jp.serif,fontSize:16,color:jp.ink}}>{formatYen(ppg*ESPRESSO_DOSE)}/shot</div>
+                        <div style={{fontFamily:jp.sans,fontSize:9,color:jp.ink3,marginTop:1,letterSpacing:1.4,textTransform:'uppercase'}}>Per shot</div>
+                      </div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : <div style={{height:56}}/>}
         </div>
       </div>
     </div>
@@ -611,7 +804,7 @@ function JPDetail({ bean, onBack, onLogBrew, onDelete }) {
 }
 
 // ─── Add flow ───────────────────────────────────────────────────────────────
-function JPAddFlow({ onClose }) {
+function JPAddFlow({ onClose, onAddBean }) {
   const [step, setStep] = React.useState('gallery');
   const [selected, setSelected] = React.useState(null);
   const [useFilter, setUseFilter] = React.useState(true);
@@ -630,7 +823,7 @@ function JPAddFlow({ onClose }) {
         <div style={{flex:1,overflow:'hidden',position:'relative'}}>
           {step==='gallery' && <JPGallery onPick={p=>{setSelected(p);setStep('filter');}}/>}
           {step==='filter' && <JPFilter photo={selected} useFilter={useFilter} setUseFilter={setUseFilter} onNext={()=>setStep('form')}/>}
-          {step==='form'   && <JPForm photo={selected} useFilter={useFilter} onSave={onClose}/>}
+          {step==='form'   && <JPForm photo={selected} useFilter={useFilter} onSave={onAddBean}/>}
         </div>
       </div>
     </div>
@@ -769,14 +962,48 @@ function JPFilter({ photo, useFilter, setUseFilter, onNext }) {
   );
 }
 
-function JPForm({ photo, useFilter, onSave }) {
-  const [rating, setRating] = React.useState(0);
-  const Row = ({label,placeholder})=>(
+function JPFormRow({label,placeholder,value,onChange,type='text',inputMode}) {
+  return (
     <div style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
       <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:4}}>{label}</div>
-      <div style={{fontFamily:jp.serif,fontSize:19,color:jp.ink3,fontStyle:'italic'}}>{placeholder}</div>
+      <input
+        type={type} inputMode={inputMode}
+        placeholder={placeholder} value={value}
+        onChange={e=>onChange(e.target.value)}
+        style={{width:'100%',border:'none',background:'transparent',fontFamily:jp.serif,fontSize:19,color:jp.ink,padding:0}}
+      />
     </div>
   );
+}
+
+function JPForm({ photo, useFilter, onSave }) {
+  const [name,       setName]       = React.useState('');
+  const [origin,     setOrigin]     = React.useState('');
+  const [region,     setRegion]     = React.useState('');
+  const [roaster,    setRoaster]    = React.useState('');
+  const [processVal, setProcessVal] = React.useState('');
+  const [roastDate,  setRoastDate]  = React.useState('');
+  const [grams,      setGrams]      = React.useState('');
+  const [price,      setPrice]      = React.useState('');
+  const [rating,     setRating]     = React.useState(0);
+
+  const save = () => {
+    if (!name.trim()) return;
+    onSave({
+      name:        name.trim(),
+      origin:      origin.trim()     || '—',
+      region:      region.trim()     || '—',
+      roaster:     roaster.trim()    || '—',
+      process:     processVal.trim() || '—',
+      roastDate:   roastDate         || new Date().toISOString().slice(0,10),
+      gramsLeft:   parseFloat(grams) || 0,
+      weightBought:parseFloat(grams) || 0,
+      pricePaid:   parseFloat(price) || 0,
+      rating,
+      imageUrl:    photo.imageUrl,
+    });
+  };
+
   return (
     <div style={{padding:'12px 24px 24px',overflowY:'auto',height:'100%'}}>
       <div style={{display:'flex',gap:16,alignItems:'flex-start',marginBottom:16}}>
@@ -792,19 +1019,25 @@ function JPForm({ photo, useFilter, onSave }) {
         </div>
       </div>
       <div className="jp-stagger">
-        <Row label="Name" placeholder="e.g. Konga"/>
-        <Row label="Origin · Region" placeholder="Ethiopia, Yirgacheffe"/>
-        <Row label="Roaster" placeholder="Onibus Coffee"/>
-        <Row label="Process" placeholder="Washed"/>
-        <Row label="Roast Date" placeholder="May 24, 2026"/>
+        <JPFormRow label="Name *"     placeholder="e.g. Konga"   value={name}       onChange={setName}/>
+        <JPFormRow label="Origin"     placeholder="Ethiopia"      value={origin}     onChange={setOrigin}/>
+        <JPFormRow label="Region"     placeholder="Yirgacheffe"   value={region}     onChange={setRegion}/>
+        <JPFormRow label="Roaster"    placeholder="Onibus Coffee"  value={roaster}    onChange={setRoaster}/>
+        <JPFormRow label="Process"    placeholder="Washed"         value={processVal} onChange={setProcessVal}/>
+        <JPFormRow label="Roast Date" placeholder="2026-05-24"    value={roastDate}  onChange={setRoastDate} type="date"/>
+        <JPFormRow label="Grams"      placeholder="250"            value={grams}      onChange={setGrams} type="number" inputMode="numeric"/>
+        <JPFormRow label="Price (฿)"  placeholder="2400"           value={price}      onChange={setPrice} type="number" inputMode="numeric"/>
         <div style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Rating</div>
           <JPStars rating={rating} onChange={setRating} size={18}/>
         </div>
       </div>
-      <button onClick={onSave} className="jp-tap" style={{
-        width:'100%',marginTop:28,height:54,background:jp.ink,color:jp.paper,border:'none',borderRadius:2,
+      <button onClick={save} className="jp-tap" style={{
+        width:'100%',marginTop:28,height:54,
+        background:name.trim()?jp.ink:'rgba(26,22,20,.2)',
+        color:jp.paper,border:'none',borderRadius:2,
         fontFamily:jp.sans,fontSize:12,letterSpacing:3,textTransform:'uppercase',cursor:'pointer',
+        transition:'background .2s',
       }}>Add to Shelf</button>
     </div>
   );
@@ -890,7 +1123,10 @@ function JPSearch({ beans, onPick, onClose }) {
 // ─── Log brew sheet ──────────────────────────────────────────────────────────
 function JPLogBrewSheet({ bean, onSave, onClose }) {
   const [dose,  setDose]  = React.useState('18.0');
+  const [note,  setNote]  = React.useState('');
+  const suggest = suggestGrind(bean);
   const [grind, setGrind] = React.useState(
+    suggest ? String(suggest.suggested) :
     bean.brews.length>0 ? bean.brews[0].grind : ''
   );
 
@@ -900,7 +1136,7 @@ function JPLogBrewSheet({ bean, onSave, onClose }) {
   const save = () => {
     const d = parseFloat(dose);
     if (!d || !grind.trim()) return;
-    onSave(d, grind.trim());
+    onSave(d, grind.trim(), note.trim());
   };
 
   return (
@@ -943,7 +1179,17 @@ function JPLogBrewSheet({ bean, onSave, onClose }) {
 
         {/* Grind */}
         <div style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:16,marginBottom:24}}>
-          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:8}}>Grind Setting</div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8}}>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Grind Setting</div>
+            {suggest && (
+              <div style={{fontFamily:jp.mono,fontSize:10,color:jp.ink3}}>
+                ↳ {suggest.suggested}
+                {suggest.bags>0
+                  ? ` · ${suggest.bags+1} bags`
+                  : ` · ${suggest.dataPoints} brews`}
+              </div>
+            )}
+          </div>
           <input
             type="text" inputMode="decimal"
             placeholder="e.g. 2.5"
@@ -952,6 +1198,16 @@ function JPLogBrewSheet({ bean, onSave, onClose }) {
               width:'100%',border:'none',background:'transparent',
               fontFamily:jp.serif,fontSize:36,color:jp.ink,padding:0,
             }}
+          />
+        </div>
+
+        {/* Note */}
+        <div style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:16,marginBottom:24}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:8}}>Note</div>
+          <input
+            type="text" placeholder="dialled in, sour edge, channelled…"
+            value={note} onChange={e=>setNote(e.target.value)}
+            style={{width:'100%',border:'none',background:'transparent',fontFamily:jp.serif,fontSize:20,color:jp.ink,padding:0,fontStyle:'italic'}}
           />
         </div>
 
@@ -968,6 +1224,269 @@ function JPLogBrewSheet({ bean, onSave, onClose }) {
   );
 }
 
+// ─── Refresh bag sheet ───────────────────────────────────────────────────────
+function JPRefreshBagSheet({ bean, onRefresh, onClose }) {
+  const [roastDate, setRoastDate] = React.useState('');
+  const [weight,    setWeight]    = React.useState(String(bean.weightBought || ''));
+  const [price,     setPrice]     = React.useState(String(bean.pricePaid || ''));
+
+  const save = () => {
+    if (!roastDate) return;
+    onRefresh({ roastDate, weightBought: parseFloat(weight)||0, pricePaid: parseFloat(price)||0 });
+  };
+
+  const inStyle = { width:'100%',border:'none',background:'transparent',fontFamily:jp.serif,fontSize:36,color:jp.ink,padding:0 };
+
+  return (
+    <div style={{position:'absolute',inset:0,zIndex:20}}>
+      <div onClick={onClose} style={{position:'absolute',inset:0,background:'rgba(26,22,20,.45)',backdropFilter:'blur(2px)'}}/>
+      <div className="jp-enter-up jp-paper" style={{
+        position:'absolute',bottom:0,left:0,right:0,
+        borderRadius:'12px 12px 0 0',padding:'28px 24px 48px',
+      }}>
+        <div style={{position:'absolute',top:10,left:'50%',transform:'translateX(-50%)',width:36,height:4,borderRadius:2,background:jp.rule}}/>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:24}}>
+          <div>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>New Bag</div>
+            <div style={{fontFamily:jp.serif,fontSize:22,color:jp.ink,marginTop:4,letterSpacing:-.2}}>{bean.name}</div>
+          </div>
+          <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:22,color:jp.ink3,lineHeight:1,cursor:'pointer'}}>×</button>
+        </div>
+
+        <div style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:16,marginBottom:16}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:8}}>Roast Date *</div>
+          <input type="date" value={roastDate} onChange={e=>setRoastDate(e.target.value)} style={{...inStyle,fontSize:28}}/>
+        </div>
+
+        <div style={{display:'flex',gap:16,marginBottom:24}}>
+          <div style={{flex:1,borderBottom:`1px solid ${jp.rule}`,paddingBottom:16}}>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:8}}>Grams</div>
+            <input type="number" inputMode="numeric" placeholder="250" value={weight} onChange={e=>setWeight(e.target.value)} style={inStyle}/>
+          </div>
+          <div style={{flex:1,borderBottom:`1px solid ${jp.rule}`,paddingBottom:16}}>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:8}}>Price (฿)</div>
+            <input type="number" inputMode="numeric" placeholder="2400" value={price} onChange={e=>setPrice(e.target.value)} style={inStyle}/>
+          </div>
+        </div>
+
+        <button onClick={save} className="jp-tap" style={{
+          width:'100%',height:54,
+          background:roastDate?jp.ink:'rgba(26,22,20,.2)',
+          color:jp.paper,border:'none',borderRadius:2,cursor:'pointer',
+          fontFamily:jp.sans,fontSize:12,letterSpacing:3,textTransform:'uppercase',
+          transition:'background .2s',
+        }}>Start New Bag</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Edit brew sheet ────────────────────────────────────────────────────────
+function JPEditBrewSheet({ brew, bean, onSave, onDelete, onClose }) {
+  const [dose,  setDose]  = React.useState(String(brew.dose));
+  const [grind, setGrind] = React.useState(brew.grind);
+  const [note,  setNote]  = React.useState(brew.note || '');
+  const [confirmDel, setConfirmDel] = React.useState(false);
+
+  const save = () => {
+    const d = parseFloat(dose);
+    if (!d || !grind.trim()) return;
+    onSave({ ...brew, dose: d, grind: grind.trim(), note: note.trim() });
+  };
+
+  const inStyle = {width:'100%',border:'none',background:'transparent',fontFamily:jp.serif,fontSize:36,color:jp.ink,padding:0};
+
+  return (
+    <div style={{position:'absolute',inset:0,zIndex:20}}>
+      <div onClick={onClose} style={{position:'absolute',inset:0,background:'rgba(26,22,20,.45)',backdropFilter:'blur(2px)'}}/>
+      <div className="jp-enter-up jp-paper" style={{position:'absolute',bottom:0,left:0,right:0,borderRadius:'12px 12px 0 0',padding:'28px 24px 48px'}}>
+        <div style={{position:'absolute',top:10,left:'50%',transform:'translateX(-50%)',width:36,height:4,borderRadius:2,background:jp.rule}}/>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:24}}>
+          <div>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Edit · {formatBrewDate(brew.date)}</div>
+            <div style={{fontFamily:jp.serif,fontSize:22,color:jp.ink,marginTop:4,letterSpacing:-.2}}>{bean.name}</div>
+          </div>
+          <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:22,color:jp.ink3,lineHeight:1,cursor:'pointer'}}>×</button>
+        </div>
+
+        <div style={{display:'flex',gap:16,marginBottom:16}}>
+          <div style={{flex:1,borderBottom:`1px solid ${jp.rule}`,paddingBottom:12}}>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:8}}>Dose (g)</div>
+            <input type="number" inputMode="decimal" step="0.1" value={dose} onChange={e=>setDose(e.target.value)} style={inStyle}/>
+          </div>
+          <div style={{flex:1,borderBottom:`1px solid ${jp.rule}`,paddingBottom:12}}>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:8}}>Grind</div>
+            <input type="text" inputMode="decimal" value={grind} onChange={e=>setGrind(e.target.value)} style={inStyle}/>
+          </div>
+        </div>
+
+        <div style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:12,marginBottom:24}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:8}}>Note</div>
+          <input type="text" placeholder="dialled in, sour edge…" value={note} onChange={e=>setNote(e.target.value)}
+            style={{...inStyle,fontSize:20,fontStyle:'italic',color:note?jp.ink:jp.ink3}}/>
+        </div>
+
+        <div style={{display:'flex',gap:10}}>
+          {!confirmDel
+            ? <button onClick={()=>setConfirmDel(true)} style={{height:44,padding:'0 16px',background:'transparent',color:jp.ink3,border:`1px solid ${jp.rule}`,borderRadius:2,cursor:'pointer',fontFamily:jp.sans,fontSize:11,letterSpacing:2,textTransform:'uppercase',flexShrink:0}}>Delete</button>
+            : <button onClick={onDelete} style={{height:44,padding:'0 16px',background:'#7a2a1a',color:'#f4efe6',border:'none',borderRadius:2,cursor:'pointer',fontFamily:jp.sans,fontSize:11,letterSpacing:2,textTransform:'uppercase',flexShrink:0}}>Confirm</button>
+          }
+          <button onClick={save} className="jp-tap" style={{flex:1,height:44,background:jp.ink,color:jp.paper,border:'none',borderRadius:2,cursor:'pointer',fontFamily:jp.sans,fontSize:12,letterSpacing:3,textTransform:'uppercase'}}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Edit bean sheet ────────────────────────────────────────────────────────
+const ROAST_LEVELS = ['Light','Light-Med','Medium','Medium-Dark','Dark'];
+
+function JPEditBeanSheet({ bean, allRoasters, onSave, onClose }) {
+  const [name,       setName]       = React.useState(bean.name);
+  const [roaster,    setRoaster]    = React.useState(bean.roaster === '—' ? '' : bean.roaster);
+  const [roastLevel, setRoastLevel] = React.useState(bean.roastLevel === '—' ? '' : bean.roastLevel);
+  const [notes,      setNotes]      = React.useState([...(bean.notes || [])]);
+  const [noteInput,  setNoteInput]  = React.useState('');
+  const [showDrop,   setShowDrop]   = React.useState(false);
+
+  const filtered = allRoasters.filter(r =>
+    r.toLowerCase().includes(roaster.toLowerCase()) && r.toLowerCase() !== roaster.toLowerCase()
+  );
+
+  const addNote = () => {
+    const v = noteInput.trim().replace(/^#/, '').replace(/,/g, '').trim();
+    if (v && !notes.find(n => n.toLowerCase() === v.toLowerCase())) setNotes(ns => [...ns, v]);
+    setNoteInput('');
+  };
+
+  const save = () => {
+    if (!name.trim()) return;
+    onSave({ ...bean, name: name.trim(), roaster: roaster.trim() || '—', roastLevel: roastLevel || '—', notes });
+  };
+
+  const inBase = { width:'100%', border:'none', background:'transparent', fontFamily:jp.serif, color:jp.ink, padding:0 };
+
+  return (
+    <div style={{position:'absolute',inset:0,zIndex:20}}>
+      <div onClick={onClose} style={{position:'absolute',inset:0,background:'rgba(26,22,20,.45)',backdropFilter:'blur(2px)'}}/>
+      <div className="jp-enter-up jp-paper" style={{
+        position:'absolute',bottom:0,left:0,right:0,
+        borderRadius:'12px 12px 0 0',padding:'28px 24px 48px',
+        maxHeight:'88vh',overflowY:'auto',
+      }}>
+        <div style={{position:'absolute',top:10,left:'50%',transform:'translateX(-50%)',width:36,height:4,borderRadius:2,background:jp.rule}}/>
+
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:24}}>
+          <div>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Edit Bean</div>
+            <div style={{fontFamily:jp.serif,fontSize:22,color:jp.ink,marginTop:4,letterSpacing:-.2}}>{bean.name}</div>
+          </div>
+          <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:22,color:jp.ink3,lineHeight:1,cursor:'pointer'}}>×</button>
+        </div>
+
+        {/* Name */}
+        <div style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:12,marginBottom:16}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:6}}>Name *</div>
+          <input
+            type="text" value={name} onChange={e=>setName(e.target.value)}
+            placeholder="e.g. Konga"
+            style={{...inBase,fontSize:24}}
+          />
+        </div>
+
+        {/* Roaster dropdown */}
+        <div style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:12,marginBottom:16,position:'relative'}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:6}}>Roaster</div>
+          <input
+            type="text" value={roaster}
+            onChange={e=>{ setRoaster(e.target.value); setShowDrop(true); }}
+            onFocus={()=>setShowDrop(true)}
+            onBlur={()=>setTimeout(()=>setShowDrop(false),150)}
+            placeholder="e.g. Onibus Coffee"
+            style={{...inBase,fontSize:22}}
+          />
+          {showDrop && filtered.length > 0 && (
+            <div style={{
+              position:'absolute',left:0,right:0,top:'100%',zIndex:10,
+              background:jp.card,border:`1px solid ${jp.rule}`,borderRadius:2,
+              boxShadow:'0 4px 16px rgba(0,0,0,.1)',
+            }}>
+              {filtered.map(r => (
+                <div key={r} onMouseDown={()=>{ setRoaster(r); setShowDrop(false); }} style={{
+                  padding:'11px 14px',fontFamily:jp.serif,fontSize:17,color:jp.ink,cursor:'pointer',
+                  borderBottom:`1px solid ${jp.rule}`,
+                }}>{r}</div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Roast level pills */}
+        <div style={{marginBottom:20}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:10}}>Roast Level</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+            {ROAST_LEVELS.map(lv => {
+              const sel = roastLevel === lv;
+              return (
+                <button key={lv} onClick={()=>setRoastLevel(sel ? '' : lv)} style={{
+                  padding:'6px 16px',borderRadius:20,cursor:'pointer',
+                  border:`1px solid ${sel ? jp.ink : jp.rule}`,
+                  background: sel ? jp.ink : 'transparent',
+                  color: sel ? jp.paper : jp.ink2,
+                  fontFamily:jp.sans,fontSize:12,letterSpacing:1.2,
+                }}>
+                  {lv}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Tasting notes */}
+        <div style={{marginBottom:28}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:10}}>Tasting Notes</div>
+          {notes.length > 0 && (
+            <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:12}}>
+              {notes.map(n => (
+                <span key={n} onClick={()=>setNotes(ns=>ns.filter(x=>x!==n))} style={{
+                  display:'inline-flex',alignItems:'center',gap:5,
+                  padding:'5px 12px',borderRadius:20,cursor:'pointer',
+                  border:`1px solid ${jp.rule}`,background:jp.card,
+                  fontFamily:jp.serif,fontSize:14,color:jp.ink,fontStyle:'italic',
+                }}>
+                  {n}<span style={{color:jp.ink3,fontSize:10,lineHeight:1,fontStyle:'normal'}}>×</span>
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{display:'flex',gap:8,alignItems:'center',borderBottom:`1px solid ${jp.rule}`,paddingBottom:8}}>
+            <span style={{fontFamily:jp.mono,fontSize:13,color:jp.ink3}}>#</span>
+            <input
+              type="text" value={noteInput}
+              onChange={e=>setNoteInput(e.target.value)}
+              onKeyDown={e=>{ if(e.key==='Enter'||e.key===','){e.preventDefault();addNote();} }}
+              placeholder="jasmine · enter to add"
+              style={{flex:1,border:'none',background:'transparent',fontFamily:jp.serif,fontSize:17,color:jp.ink,padding:0,fontStyle:'italic'}}
+            />
+            <button onMouseDown={addNote} style={{
+              background:'transparent',border:'none',cursor:'pointer',
+              fontFamily:jp.sans,fontSize:11,color:jp.ink3,letterSpacing:1.2,textTransform:'uppercase',flexShrink:0,
+            }}>Add</button>
+          </div>
+        </div>
+
+        <button onClick={save} className="jp-tap" style={{
+          width:'100%',height:54,
+          background:name.trim()?jp.ink:'rgba(26,22,20,.2)',
+          color:jp.paper,border:'none',borderRadius:2,cursor:'pointer',
+          fontFamily:jp.sans,fontSize:12,letterSpacing:3,textTransform:'uppercase',
+          transition:'background .2s',
+        }}>Save Changes</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── App root ────────────────────────────────────────────────────────────────
 function AppJapandi() {
   const [beans, setBeans] = React.useState(() => {
@@ -977,28 +1496,160 @@ function AppJapandi() {
     } catch { return INITIAL_BEANS; }
   });
   const [view,  setView]  = React.useState({ name:'home', bean:null });
-  const [adding,    setAdding]    = React.useState(false);
-  const [searching, setSearching] = React.useState(false);
-  const [logBrewFor, setLogBrewFor] = React.useState(null);
+  const [adding,      setAdding]      = React.useState(false);
+  const [searching,   setSearching]   = React.useState(false);
+  const [logBrewFor,  setLogBrewFor]  = React.useState(null);
+  const [refreshFor,  setRefreshFor]  = React.useState(null);
+  const [editBrewFor, setEditBrewFor] = React.useState(null);
+  const [editBeanFor, setEditBeanFor] = React.useState(null);
+  const [syncing,     setSyncing]     = React.useState(false);
+  const skipSave = React.useRef(false);
+  const saveTimer = React.useRef(null);
 
+  // Load from Supabase on mount + real-time listener
+  React.useEffect(() => {
+    sb.from('grind_data').select('beans').eq('id', 1).single()
+      .then(({ data }) => {
+        if (data?.beans?.length) { skipSave.current = true; setBeans(data.beans); }
+      }).catch(() => {});
+
+    const ch = sb.channel('grind')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'grind_data' }, ({ new: row }) => {
+        if (row?.beans) { skipSave.current = true; setBeans(row.beans); }
+      })
+      .subscribe();
+
+    return () => sb.removeChannel(ch);
+  }, []);
+
+  // Save to Supabase + localStorage on every change (debounced)
   React.useEffect(() => {
     try { localStorage.setItem('thegrind-beans', JSON.stringify(beans)); } catch {}
+    if (skipSave.current) { skipSave.current = false; return; }
+    clearTimeout(saveTimer.current);
+    setSyncing(true);
+    saveTimer.current = setTimeout(async () => {
+      try {
+        await sb.from('grind_data').upsert({ id: 1, beans, updated_at: new Date().toISOString() });
+      } catch {}
+      setSyncing(false);
+    }, 1000);
   }, [beans]);
 
   const open = id => setView({ name:'detail', bean:id });
 
-  const addBrew = (beanId, dose, grind) => {
+  const addBrew = (beanId, dose, grind, note='') => {
     setBeans(bs => bs.map(b => b.id!==beanId ? b : {
       ...b,
-      brews: [{ id:'br-'+(++_brewId), date:TODAY.toISOString().slice(0,10), dose, grind }, ...b.brews],
+      brews: [{ id:'br-'+(++_brewId), date:TODAY.toISOString().slice(0,10), dose, grind, note }, ...b.brews],
       gramsLeft: Math.max(0, b.gramsLeft - dose),
     }));
     setLogBrewFor(null);
   };
 
+  const saveEditBrew = (beanId, updated) => {
+    setBeans(bs => bs.map(b => {
+      if (b.id!==beanId) return b;
+      const newBrews = b.brews.map(br=>br.id===updated.id?updated:br);
+      const used = newBrews.reduce((s,br)=>s+br.dose,0);
+      return { ...b, brews:newBrews, gramsLeft:Math.max(0,b.weightBought-used) };
+    }));
+    setEditBrewFor(null);
+  };
+
+  const deleteBrewEntry = (beanId, brewId) => {
+    setBeans(bs => bs.map(b => {
+      if (b.id!==beanId) return b;
+      const newBrews = b.brews.filter(br=>br.id!==brewId);
+      const used = newBrews.reduce((s,br)=>s+br.dose,0);
+      return { ...b, brews:newBrews, gramsLeft:Math.max(0,b.weightBought-used) };
+    }));
+    setEditBrewFor(null);
+  };
+
+  const exportData = async () => {
+    const json = JSON.stringify(beans, null, 2);
+    const filename = `thegrind-${TODAY.toISOString().slice(0,10)}.json`;
+    if (navigator.share && navigator.canShare) {
+      try {
+        const file = new File([json], filename, {type:'application/json'});
+        if (navigator.canShare({files:[file]})) {
+          await navigator.share({files:[file], title:'The Grind Backup'});
+          return;
+        }
+      } catch {}
+    }
+    const blob = new Blob([json],{type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  };
+
+  const updateRating = (beanId, rating) => {
+    setBeans(bs => bs.map(b => b.id!==beanId ? b : {...b, rating}));
+  };
+
   const deleteBean = (beanId) => {
     setBeans(bs => bs.filter(b => b.id !== beanId));
     setView({ name:'home', bean:null });
+  };
+
+  const refreshBag = (beanId, newBagData) => {
+    setBeans(bs => bs.map(b => {
+      if (b.id !== beanId) return b;
+      const archivedBag = {
+        id: b.id + '_bag' + Date.now(),
+        roastDate:    b.roastDate,
+        weightBought: b.weightBought,
+        pricePaid:    b.pricePaid,
+        gramsUsed:    b.weightBought - b.gramsLeft,
+        brews:        b.brews,
+      };
+      return {
+        ...b,
+        roastDate:    newBagData.roastDate,
+        weightBought: newBagData.weightBought,
+        pricePaid:    newBagData.pricePaid,
+        gramsLeft:    newBagData.weightBought,
+        brews:        [],
+        bags:         [...(b.bags || []), archivedBag],
+      };
+    }));
+    setRefreshFor(null);
+  };
+
+  const saveBeanEdits = (updated) => {
+    setBeans(bs => bs.map(b => b.id === updated.id ? updated : b));
+    setEditBeanFor(null);
+  };
+
+  const addBean = (data) => {
+    const id = 'b' + Date.now();
+    const newBean = {
+      id,
+      name:         data.name,
+      origin:       data.origin,
+      region:       data.region,
+      roaster:      data.roaster,
+      process:      data.process,
+      varietal:     '—',
+      altitude:     '—',
+      roastLevel:   '—',
+      roastDate:    data.roastDate,
+      rating:       data.rating,
+      notes:        [],
+      description:  '',
+      tone:         ['#c89878','#5a3820'],
+      gramsLeft:    data.gramsLeft,
+      weightBought: data.weightBought,
+      pricePaid:    data.pricePaid,
+      brews:        [],
+      imageUrl:     data.imageUrl || null,
+    };
+    setBeans(bs => [newBean, ...bs]);
+    setAdding(false);
   };
 
   const currentBean = view.bean ? beans.find(b=>b.id===view.bean) : null;
@@ -1008,19 +1659,43 @@ function AppJapandi() {
       {/* Home / Detail screens */}
       <div className={view.name==='detail'?'jp-screen jp-enter-right':'jp-screen'} key={view.name}>
         {view.name==='home'
-          ? <JPHome beans={beans} onOpen={open} onAdd={()=>setAdding(true)} onSearch={()=>setSearching(true)}/>
-          : <JPDetail bean={currentBean} onBack={()=>setView({name:'home',bean:null})} onLogBrew={()=>setLogBrewFor(currentBean.id)} onDelete={()=>deleteBean(currentBean.id)}/>
+          ? <JPHome beans={beans} onOpen={open} onAdd={()=>setAdding(true)} onSearch={()=>setSearching(true)} onExport={exportData} syncing={syncing}/>
+          : <JPDetail bean={currentBean} onBack={()=>setView({name:'home',bean:null})} onLogBrew={()=>setLogBrewFor(currentBean.id)} onRefreshBag={()=>setRefreshFor(currentBean.id)} onEditBrew={brew=>setEditBrewFor({beanId:currentBean.id,brew})} onDelete={()=>deleteBean(currentBean.id)} onRatingChange={r=>updateRating(currentBean.id,r)} onEditBean={()=>setEditBeanFor(currentBean.id)}/>
         }
       </div>
 
       {/* Overlays */}
-      {adding    && <JPAddFlow onClose={()=>setAdding(false)}/>}
+      {adding    && <JPAddFlow onClose={()=>setAdding(false)} onAddBean={addBean}/>}
       {searching && <JPSearch beans={beans} onPick={id=>{setSearching(false);open(id);}} onClose={()=>setSearching(false)}/>}
       {logBrewFor && (
         <JPLogBrewSheet
           bean={beans.find(b=>b.id===logBrewFor)}
-          onSave={(dose,grind)=>addBrew(logBrewFor,dose,grind)}
+          onSave={(dose,grind,note)=>addBrew(logBrewFor,dose,grind,note)}
           onClose={()=>setLogBrewFor(null)}
+        />
+      )}
+      {editBrewFor && (
+        <JPEditBrewSheet
+          brew={editBrewFor.brew}
+          bean={beans.find(b=>b.id===editBrewFor.beanId)}
+          onSave={updated=>saveEditBrew(editBrewFor.beanId,updated)}
+          onDelete={()=>deleteBrewEntry(editBrewFor.beanId,editBrewFor.brew.id)}
+          onClose={()=>setEditBrewFor(null)}
+        />
+      )}
+      {refreshFor && (
+        <JPRefreshBagSheet
+          bean={beans.find(b=>b.id===refreshFor)}
+          onRefresh={(data)=>refreshBag(refreshFor,data)}
+          onClose={()=>setRefreshFor(null)}
+        />
+      )}
+      {editBeanFor && (
+        <JPEditBeanSheet
+          bean={beans.find(b=>b.id===editBeanFor)}
+          allRoasters={[...new Set(beans.map(b=>b.roaster).filter(r=>r&&r!=='—'))].sort()}
+          onSave={saveBeanEdits}
+          onClose={()=>setEditBeanFor(null)}
         />
       )}
     </div>
