@@ -68,9 +68,24 @@
       opacity: .9; mix-blend-mode: multiply;
     }
     input, button, textarea { font-family: inherit; }
-    input::placeholder { color: rgba(139,125,114,.55); }
+    input::placeholder { color: rgba(139,125,114,.55); transition: opacity .25s ease, color .25s ease; }
+    input:focus::placeholder { opacity: .5; }
     input:focus, textarea:focus { outline: none; }
+    input, textarea { caret-color: #1a1614; }
     button { cursor: pointer; }
+
+    /* Field underline that grows in from the left on focus */
+    .jp-field { position: relative; }
+    .jp-field::after {
+      content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1.5px;
+      background: #1a1614; transform: scaleX(0); transform-origin: left;
+      transition: transform .38s cubic-bezier(.22,1,.36,1);
+    }
+    .jp-field:focus-within::after { transform: scaleX(1); }
+
+    /* Filter chips fade/rise in when the panel opens */
+    @keyframes jpChip { from { opacity:0; transform: translateY(4px); } to { opacity:1; transform:none; } }
+    .jp-chip-in { animation: jpChip .3s cubic-bezier(.22,1,.36,1) both; }
   </style>
 </head>
 <body>
@@ -1205,7 +1220,7 @@ function JPCrop({ photo, onDone }) {
 
 function JPFormRow({label,placeholder,value,onChange,type='text',inputMode}) {
   return (
-    <div style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
+    <div className="jp-field" style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
       <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:4}}>{label}</div>
       <input
         type={type} inputMode={inputMode}
@@ -1277,7 +1292,7 @@ function JPForm({ photo, useFilter, onSave, allRoasters }) {
         <JPFormRow label="Name *" placeholder="e.g. Konga" value={name} onChange={setName}/>
 
         {/* Roaster + dropdown */}
-        <div style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`,position:'relative',zIndex:showDrop?200:1}}>
+        <div className="jp-field" style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`,position:'relative',zIndex:showDrop?200:1}}>
           <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:4}}>Roaster</div>
           <input
             type="text" value={roaster}
@@ -1312,7 +1327,7 @@ function JPForm({ photo, useFilter, onSave, allRoasters }) {
         </div>
 
         {/* Tasting Notes */}
-        <div style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
+        <div className="jp-field" style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
           <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:10}}>Tasting Notes</div>
           {notes.length>0 && (
             <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:10}}>
@@ -1335,12 +1350,12 @@ function JPForm({ photo, useFilter, onSave, allRoasters }) {
 
         {/* Grams + Price */}
         <div style={{display:'flex',gap:24}}>
-          <div style={{flex:1,padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
+          <div className="jp-field" style={{flex:1,padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
             <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:4}}>Grams</div>
             <input type="number" inputMode="numeric" placeholder="250" value={grams} onChange={e=>setGrams(e.target.value)}
               style={{width:'100%',border:'none',background:'transparent',fontFamily:jp.serif,fontSize:19,color:jp.ink,padding:0}}/>
           </div>
-          <div style={{flex:1,padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
+          <div className="jp-field" style={{flex:1,padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
             <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:4}}>Price (฿)</div>
             <input type="number" inputMode="numeric" placeholder="2400" value={price} onChange={e=>setPrice(e.target.value)}
               style={{width:'100%',border:'none',background:'transparent',fontFamily:jp.serif,fontSize:19,color:jp.ink,padding:0}}/>
@@ -1366,18 +1381,71 @@ function JPForm({ photo, useFilter, onSave, allRoasters }) {
 }
 
 // ─── Search overlay ──────────────────────────────────────────────────────────
+// Small reusable filter chip
+function JPChip({ label, active, onClick, count }) {
+  return (
+    <button onClick={onClick} className="jp-tap jp-chip-in" style={{
+      display:'inline-flex',alignItems:'center',gap:6,
+      padding:'6px 13px',borderRadius:20,cursor:'pointer',
+      border:`1px solid ${active?jp.ink:jp.rule}`,
+      background:active?jp.ink:'transparent',
+      color:active?jp.paper:jp.ink2,
+      fontFamily:jp.sans,fontSize:12,letterSpacing:.6,whiteSpace:'nowrap',
+      transition:'background .2s, color .2s, border-color .2s',
+    }}>
+      {label}
+      {count!=null && <span style={{fontFamily:jp.mono,fontSize:10,opacity:.6}}>{count}</span>}
+    </button>
+  );
+}
+
+// A labelled row of multi-select chips (module-level so it never remounts on keystroke)
+function JPFacetGroup({ label, opts, sel, setSel }) {
+  if (!opts || opts.length === 0) return null;
+  const toggle = v => setSel(sel.includes(v) ? sel.filter(x=>x!==v) : [...sel, v]);
+  return (
+    <div style={{marginBottom:14}}>
+      <div style={{fontFamily:jp.sans,fontSize:9,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:8}}>{label}</div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+        {opts.map(o=>(
+          <JPChip key={o} label={o} active={sel.includes(o)} onClick={()=>toggle(o)}/>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function JPSearch({ beans, onPick, onClose }) {
-  const [query, setQuery] = React.useState('');
+  const [query,     setQuery]     = React.useState('');
+  const [roastSel,  setRoastSel]  = React.useState([]);
+  const [originSel, setOriginSel] = React.useState([]);
+  const [roastrSel, setRoastrSel] = React.useState([]);
+  const [noteSel,   setNoteSel]   = React.useState([]);
+  const [showFilters, setShowFilters] = React.useState(false);
   const q = query.toLowerCase().trim();
-  const results = q
-    ? beans.filter(b =>
-        b.name.toLowerCase().includes(q) ||
-        b.origin.toLowerCase().includes(q) ||
-        b.roaster.toLowerCase().includes(q) ||
-        b.region.toLowerCase().includes(q) ||
-        b.notes.some(n=>n.toLowerCase().includes(q))
-      )
-    : beans;
+
+  // Facet options derived from the shelf
+  const roastOpts   = ROAST_LEVELS.filter(lv => beans.some(b => b.roastLevel === lv));
+  const originOpts  = [...new Set(beans.map(b=>realVal(b.origin)).filter(Boolean))].sort();
+  const roasterOpts = [...new Set(beans.map(b=>realVal(b.roaster)).filter(Boolean))].sort();
+  const noteOpts    = [...new Set(beans.flatMap(b=>b.notes||[]))].sort((a,b)=>a.localeCompare(b));
+
+  const activeCount = roastSel.length + originSel.length + roastrSel.length + noteSel.length;
+  const clearAll = () => { setRoastSel([]); setOriginSel([]); setRoastrSel([]); setNoteSel([]); };
+
+  const results = beans.filter(b => {
+    if (q) {
+      const hay = [b.name,b.origin,b.region,b.roaster,b.process,b.varietal,b.roastLevel,...(b.notes||[])]
+        .filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    // Within a facet: OR. Across facets: AND.
+    if (roastSel.length  && !roastSel.includes(b.roastLevel)) return false;
+    if (originSel.length && !originSel.includes(b.origin))    return false;
+    if (roastrSel.length && !roastrSel.includes(b.roaster))   return false;
+    if (noteSel.length   && !noteSel.some(n=>(b.notes||[]).includes(n))) return false;
+    return true;
+  });
 
   const inputRef = React.useRef(null);
   React.useEffect(()=>{ setTimeout(()=>inputRef.current&&inputRef.current.focus(), 80); },[]);
@@ -1385,10 +1453,9 @@ function JPSearch({ beans, onPick, onClose }) {
   return (
     <div className="jp-enter-fade jp-paper" style={{position:'absolute',inset:0,zIndex:20,display:'flex',flexDirection:'column'}}>
       {/* Search bar */}
-      <div style={{
-        paddingTop:56,borderBottom:`1px solid ${jp.rule}`,
+      <div className="jp-field" style={{
         display:'flex',alignItems:'center',gap:12,padding:'56px 24px 14px',
-        flexShrink:0,
+        borderBottom:`1px solid ${jp.rule}`,flexShrink:0,
       }}>
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={jp.ink3} strokeWidth="1.4" strokeLinecap="round" style={{flexShrink:0}}>
           <circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/>
@@ -1397,27 +1464,66 @@ function JPSearch({ beans, onPick, onClose }) {
           ref={inputRef}
           value={query}
           onChange={e=>setQuery(e.target.value)}
-          placeholder="Bean, origin, roaster…"
-          style={{
-            flex:1,border:'none',background:'transparent',
-            fontFamily:jp.serif,fontSize:20,color:jp.ink,padding:0,
-          }}
+          placeholder="Bean, origin, roaster, note…"
+          style={{flex:1,border:'none',background:'transparent',fontFamily:jp.serif,fontSize:20,color:jp.ink,padding:0}}
         />
+        {query && (
+          <button onClick={()=>setQuery('')} className="jp-tap" style={{
+            background:'transparent',border:'none',cursor:'pointer',color:jp.ink3,
+            fontSize:18,lineHeight:1,padding:0,flexShrink:0,
+          }}>×</button>
+        )}
         <button onClick={onClose} style={{
           background:'transparent',border:'none',cursor:'pointer',
           fontFamily:jp.sans,fontSize:13,color:jp.ink,padding:0,flexShrink:0,
         }}>Cancel</button>
       </div>
 
-      {/* Results */}
+      {/* Filter toggle bar */}
+      <div style={{
+        display:'flex',alignItems:'center',justifyContent:'space-between',
+        padding:'10px 24px',borderBottom:`1px solid ${jp.rule}`,flexShrink:0,
+      }}>
+        <button onClick={()=>setShowFilters(v=>!v)} className="jp-tap" style={{
+          display:'inline-flex',alignItems:'center',gap:8,background:'transparent',border:'none',
+          cursor:'pointer',fontFamily:jp.sans,fontSize:11,letterSpacing:1.4,textTransform:'uppercase',
+          color:activeCount?jp.ink:jp.ink3,padding:0,
+        }}>
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+            <path d="M2 4h12M4 8h8M6 12h4"/>
+          </svg>
+          Filters
+          {activeCount>0 && <span style={{
+            minWidth:16,height:16,borderRadius:8,background:jp.ink,color:jp.paper,
+            fontFamily:jp.mono,fontSize:10,display:'inline-flex',alignItems:'center',justifyContent:'center',padding:'0 4px',
+          }}>{activeCount}</span>}
+          <span style={{fontSize:9,opacity:.6}}>{showFilters?'▲':'▼'}</span>
+        </button>
+        {activeCount>0 && (
+          <button onClick={clearAll} className="jp-tap" style={{
+            background:'transparent',border:'none',cursor:'pointer',
+            fontFamily:jp.sans,fontSize:11,letterSpacing:1.2,textTransform:'uppercase',color:jp.warn,padding:0,
+          }}>Clear</button>
+        )}
+      </div>
+
+      {/* Scroll area: facets (optional) + results */}
       <div style={{flex:1,overflowY:'auto'}}>
-        {!q && (
-          <div style={{padding:'12px 24px 4px',fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>
-            All beans
+        {showFilters && (
+          <div className="jp-enter-fade" style={{padding:'16px 24px',borderBottom:`1px solid ${jp.rule}`,background:jp.card}}>
+            <JPFacetGroup label="Roast Level"   opts={roastOpts}   sel={roastSel}  setSel={setRoastSel}/>
+            <JPFacetGroup label="Origin"        opts={originOpts}  sel={originSel} setSel={setOriginSel}/>
+            <JPFacetGroup label="Roaster"       opts={roasterOpts} sel={roastrSel} setSel={setRoastrSel}/>
+            <JPFacetGroup label="Tasting Notes" opts={noteOpts}    sel={noteSel}   setSel={setNoteSel}/>
           </div>
         )}
-        {q && results.length===0 && (
-          <div style={{padding:'64px 24px',textAlign:'center',fontFamily:jp.serif,fontStyle:'italic',fontSize:18,color:jp.ink3}}>
+
+        <div style={{padding:'12px 24px 4px',fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>
+          {q||activeCount ? `${results.length} ${results.length===1?'result':'results'}` : 'All beans'}
+        </div>
+
+        {results.length===0 && (
+          <div style={{padding:'56px 24px',textAlign:'center',fontFamily:jp.serif,fontStyle:'italic',fontSize:18,color:jp.ink3}}>
             Nothing found
           </div>
         )}
@@ -1728,7 +1834,7 @@ function JPEditBeanSheet({ bean, allRoasters, onSave, onClose }) {
         </div>
 
         {/* Name */}
-        <div style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:12,marginBottom:16}}>
+        <div className="jp-field" style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:12,marginBottom:16}}>
           <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:6}}>Name *</div>
           <input
             type="text" value={name} onChange={e=>setName(e.target.value)}
@@ -1738,7 +1844,7 @@ function JPEditBeanSheet({ bean, allRoasters, onSave, onClose }) {
         </div>
 
         {/* Roaster dropdown */}
-        <div style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:12,marginBottom:16,position:'relative',zIndex:showDrop?200:1}}>
+        <div className="jp-field" style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:12,marginBottom:16,position:'relative',zIndex:showDrop?200:1}}>
           <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:6}}>Roaster</div>
           <input
             type="text" value={roaster}
@@ -1802,7 +1908,7 @@ function JPEditBeanSheet({ bean, allRoasters, onSave, onClose }) {
               ))}
             </div>
           )}
-          <div style={{display:'flex',gap:8,alignItems:'center',borderBottom:`1px solid ${jp.rule}`,paddingBottom:8}}>
+          <div className="jp-field" style={{display:'flex',gap:8,alignItems:'center',borderBottom:`1px solid ${jp.rule}`,paddingBottom:8}}>
             <span style={{fontFamily:jp.mono,fontSize:13,color:jp.ink3}}>#</span>
             <input
               type="text" value={noteInput}
