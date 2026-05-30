@@ -2110,8 +2110,9 @@ function AppJapandi() {
     localStorage.setItem('thegrind-dark', next ? '1' : '0');
     setDark(next);
   };
-  const skipSave = React.useRef(false);
+  const skipSave  = React.useRef(false);
   const saveTimer = React.useRef(null);
+  const isMounted = React.useRef(false);
 
   // Load from Supabase on mount + real-time listener
   React.useEffect(() => {
@@ -2132,7 +2133,13 @@ function AppJapandi() {
   // Save to Supabase + localStorage on every change (debounced)
   React.useEffect(() => {
     try { localStorage.setItem('thegrind-beans', JSON.stringify(beans)); } catch {}
+
+    // Never save on the very first run — localStorage on mount must not overwrite Supabase
+    if (!isMounted.current) { isMounted.current = true; return; }
+
+    // Supabase just loaded fresh data — cancel any stale timer and skip
     if (skipSave.current) { skipSave.current = false; clearTimeout(saveTimer.current); return; }
+
     clearTimeout(saveTimer.current);
     setSyncing(true);
     saveTimer.current = setTimeout(async () => {
