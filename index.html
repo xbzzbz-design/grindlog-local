@@ -415,7 +415,7 @@ function JPPeakReminder({ beans, onOpen }) {
 }
 
 // ─── Home ───────────────────────────────────────────────────────────────────
-function JPHome({ beans, onOpen, onAdd, onSearch, onExport, syncing, dark, onToggleDark, onQuickLog }) {
+function JPHome({ beans, onOpen, onAdd, onSearch, onExport, onImport, syncing, dark, onToggleDark, onQuickLog }) {
   const [filter, setFilter] = React.useState('All');
   const tabs = ['All','Peak','Resting','Archive'];
   const list = beans.filter(b => {
@@ -473,10 +473,19 @@ function JPHome({ beans, onOpen, onAdd, onSearch, onExport, syncing, dark, onTog
                     }
                   </button>
                 </div>
-                <button onClick={onExport} style={{
-                  background:'transparent',border:'none',cursor:'pointer',padding:0,
-                  fontFamily:jp.sans,fontSize:9,color:jp.ink3,letterSpacing:1.6,textTransform:'uppercase',
-                }}>Export ↓</button>
+                <div style={{display:'flex',gap:10}}>
+                  <button onClick={onExport} style={{
+                    background:'transparent',border:'none',cursor:'pointer',padding:0,
+                    fontFamily:jp.sans,fontSize:9,color:jp.ink3,letterSpacing:1.6,textTransform:'uppercase',
+                  }}>Export ↓</button>
+                  <label style={{
+                    background:'transparent',border:'none',cursor:'pointer',padding:0,
+                    fontFamily:jp.sans,fontSize:9,color:jp.ink3,letterSpacing:1.6,textTransform:'uppercase',
+                  }}>
+                    Import ↑
+                    <input type="file" accept=".json,application/json" onChange={onImport} style={{display:'none'}}/>
+                  </label>
+                </div>
               </div>
             </div>
           </div>
@@ -1279,6 +1288,54 @@ function JPCrop({ photo, onDone }) {
   );
 }
 
+// ─── Standalone photo-change flow (gallery → crop → filter → done) ──────────
+function JPPhotoFlow({ onDone, onClose }) {
+  const [step,       setStep]      = React.useState('gallery');
+  const [selected,   setSelected]  = React.useState(null);
+  const [finalPhoto, setFinalPhoto] = React.useState(null);
+  const [useFilter,  setUseFilter] = React.useState(true);
+
+  const stepBack = () => {
+    if (step === 'filter') setStep('crop');
+    else if (step === 'crop') setStep('gallery');
+    else onClose();
+  };
+
+  const handleDone = async () => {
+    if (!finalPhoto) return;
+    const url = (useFilter && finalPhoto.imageUrl)
+      ? await bakeFilter(finalPhoto.imageUrl)
+      : finalPhoto.imageUrl;
+    onDone(url);
+  };
+
+  const centerLabel = step==='gallery'?'Select Photo':step==='crop'?'Adjust Crop':'Apply Filter';
+
+  return (
+    <div className="jp-enter-up" style={{position:'absolute',inset:0,background:jp.paper,zIndex:30}}>
+      <div className="jp-paper" style={{position:'absolute',inset:0,display:'flex',flexDirection:'column'}}>
+        <JPHeader
+          left={step==='gallery'
+            ? <button onClick={onClose} className="jp-tap" style={{background:'transparent',border:'none',cursor:'pointer',color:jp.ink,fontFamily:jp.sans,fontSize:13,padding:0}}>Cancel</button>
+            : <button onClick={stepBack} className="jp-tap" style={{background:'transparent',border:'none',cursor:'pointer',color:jp.ink,fontFamily:jp.sans,fontSize:13,padding:0}}>← Back</button>
+          }
+          center={centerLabel}
+          right={null}
+        />
+        <div style={{flex:1,overflow:'hidden',position:'relative'}}>
+          {step==='gallery' && <JPGallery onPick={p=>{setSelected(p);setStep('crop');}}/>}
+          {step==='crop' && selected && (
+            <JPCrop photo={selected} onDone={url=>{setFinalPhoto({...selected,imageUrl:url});setStep('filter');}}/>
+          )}
+          {step==='filter' && finalPhoto && (
+            <JPFilter photo={finalPhoto} useFilter={useFilter} setUseFilter={setUseFilter} onNext={handleDone}/>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function JPFormRow({label,placeholder,value,onChange,type='text',inputMode}) {
   return (
     <div className="jp-field" style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
@@ -1858,6 +1915,8 @@ function JPEditBeanSheet({ bean, allRoasters, onSave, onClose }) {
   const [notes,      setNotes]      = React.useState([...(bean.notes || [])]);
   const [noteInput,  setNoteInput]  = React.useState('');
   const [showDrop,   setShowDrop]   = React.useState(false);
+  const [imageUrl,   setImageUrl]   = React.useState(bean.imageUrl || null);
+  const [editingPhoto, setEditingPhoto] = React.useState(false);
 
   const filtered = allRoasters.filter(r =>
     r.toLowerCase().includes(roaster.toLowerCase()) && r.toLowerCase() !== roaster.toLowerCase()
@@ -1871,7 +1930,7 @@ function JPEditBeanSheet({ bean, allRoasters, onSave, onClose }) {
 
   const save = () => {
     if (!name.trim()) return;
-    onSave({ ...bean, name: name.trim(), roaster: roaster.trim() || '—', roastLevel: roastLevel || '—', notes });
+    onSave({ ...bean, name: name.trim(), roaster: roaster.trim() || '—', roastLevel: roastLevel || '—', notes, imageUrl });
   };
 
   const inBase = { width:'100%', border:'none', background:'transparent', fontFamily:jp.serif, color:jp.ink, padding:0 };
@@ -1886,12 +1945,31 @@ function JPEditBeanSheet({ bean, allRoasters, onSave, onClose }) {
       }}>
         <div style={{position:'absolute',top:10,left:'50%',transform:'translateX(-50%)',width:36,height:4,borderRadius:2,background:jp.rule}}/>
 
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:24}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:20}}>
           <div>
             <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Edit Bean</div>
             <div style={{fontFamily:jp.serif,fontSize:22,color:jp.ink,marginTop:4,letterSpacing:-.2}}>{bean.name}</div>
           </div>
           <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:22,color:jp.ink3,lineHeight:1,cursor:'pointer'}}>×</button>
+        </div>
+
+        {/* Photo */}
+        <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:20,padding:'12px 0',borderBottom:`1px solid ${jp.rule}`}}>
+          <div style={{width:56,aspectRatio:'4/5',borderRadius:2,overflow:'hidden',flexShrink:0,background:jp.ink}}>
+            {imageUrl
+              ? <img src={imageUrl} style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
+              : <div style={{width:'100%',height:'100%',background:`linear-gradient(135deg,${bean.tone[0]},${bean.tone[1]})`}}/>
+            }
+          </div>
+          <button onClick={()=>setEditingPhoto(true)} className="jp-tap" style={{
+            background:'transparent',border:`1px solid ${jp.rule}`,borderRadius:2,cursor:'pointer',
+            fontFamily:jp.sans,fontSize:11,letterSpacing:1.8,textTransform:'uppercase',color:jp.ink2,
+            padding:'8px 16px',
+          }}>Change Photo</button>
+          {imageUrl && <button onClick={()=>setImageUrl(null)} style={{
+            background:'transparent',border:'none',cursor:'pointer',
+            fontFamily:jp.sans,fontSize:11,color:jp.ink3,letterSpacing:1,padding:0,
+          }}>Remove</button>}
         </div>
 
         {/* Name */}
@@ -1993,6 +2071,12 @@ function JPEditBeanSheet({ bean, allRoasters, onSave, onClose }) {
           transition:'background .2s',
         }}>Save Changes</button>
       </div>
+      {editingPhoto && (
+        <JPPhotoFlow
+          onDone={url=>{setImageUrl(url);setEditingPhoto(false);}}
+          onClose={()=>setEditingPhoto(false)}
+        />
+      )}
     </div>
   );
 }
@@ -2060,6 +2144,25 @@ function AppJapandi() {
   }, [beans]);
 
   const open = id => setView({ name:'detail', bean:id });
+
+  const importData = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        const imported = Array.isArray(data) ? data : data.beans;
+        if (!Array.isArray(imported) || !imported.length) { alert('ไฟล์ไม่ถูกต้อง'); return; }
+        if (window.confirm(`Import ${imported.length} beans? ข้อมูลปัจจุบันจะถูกแทนที่`)) {
+          skipSave.current = false;
+          setBeans(imported);
+        }
+      } catch { alert('ไฟล์ JSON ไม่ถูกต้อง'); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   const addBrew = (beanId, dose, grind, note='', date=todayISO()) => {
     haptic(12);
@@ -2185,7 +2288,7 @@ function AppJapandi() {
       {/* Home / Detail screens */}
       <div className={view.name==='detail'?'jp-screen jp-enter-right':'jp-screen'} key={view.name}>
         {view.name==='home'
-          ? <JPHome beans={beans} onOpen={open} onAdd={()=>setAdding(true)} onSearch={()=>setSearching(true)} onExport={exportData} syncing={syncing} dark={dark} onToggleDark={toggleDark} onQuickLog={id=>setLogBrewFor(id)}/>
+          ? <JPHome beans={beans} onOpen={open} onAdd={()=>setAdding(true)} onSearch={()=>setSearching(true)} onExport={exportData} onImport={importData} syncing={syncing} dark={dark} onToggleDark={toggleDark} onQuickLog={id=>setLogBrewFor(id)}/>
           : <JPDetail bean={currentBean} onBack={()=>setView({name:'home',bean:null})} onLogBrew={()=>setLogBrewFor(currentBean.id)} onRefreshBag={()=>setRefreshFor(currentBean.id)} onEditBrew={brew=>setEditBrewFor({beanId:currentBean.id,brew})} onDelete={()=>deleteBean(currentBean.id)} onRatingChange={r=>updateRating(currentBean.id,r)} onEditBean={()=>setEditBeanFor(currentBean.id)}/>
         }
       </div>
