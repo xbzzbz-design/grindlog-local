@@ -2132,7 +2132,7 @@ function AppJapandi() {
   // Save to Supabase + localStorage on every change (debounced)
   React.useEffect(() => {
     try { localStorage.setItem('thegrind-beans', JSON.stringify(beans)); } catch {}
-    if (skipSave.current) { skipSave.current = false; return; }
+    if (skipSave.current) { skipSave.current = false; clearTimeout(saveTimer.current); return; }
     clearTimeout(saveTimer.current);
     setSyncing(true);
     saveTimer.current = setTimeout(async () => {
