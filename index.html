@@ -86,9 +86,16 @@
 const SUPABASE_URL      = 'https://cgvtlmqvxbobudzkyrcc.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_83YqgHj9bkdnCPPsFLoEDQ_h4kmVx6d';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Clear stale dirty flag from previous code version
+try { localStorage.removeItem('thegrind-dirty'); } catch {}
 
 // ─── Data ──────────────────────────────────────────────────────────────────
 const TODAY = new Date();
+// Local calendar date as YYYY-MM-DD (avoids UTC off-by-one for late-night logs)
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 const ESPRESSO_DOSE = 18;
 let _brewId = 0;
 const mkB = (id, date, dose, grind) => ({ id, date, dose: +dose, grind });
@@ -190,6 +197,9 @@ function formatYenFine(n) {
   if (n == null || !Number.isFinite(n)) return '—';
   return '฿' + (Math.round(n*10)/10).toFixed(1);
 }
+// Treat placeholder em-dashes as empty so sparse beans don't show stray dashes
+const realVal  = v => (v && v !== '—') ? v : null;
+const joinReal = (arr, sep) => arr.map(realVal).filter(Boolean).join(sep);
 function comingIntoPeak(beans) {
   return beans
     .map(bean => ({ bean, info: roastInfo(bean.roastDate) }))
@@ -225,6 +235,13 @@ function suggestGrind(bean) {
   const raw = my - slope*(mx - todayDays);
   const suggested = Math.round(Math.max(0.5,Math.min(11,raw))*10)/10;
   return { suggested, dataPoints: n, bags: (bean.bags||[]).length };
+}
+
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function shortDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
 }
 
 // ─── Design tokens ──────────────────────────────────────────────────────────
@@ -436,6 +453,15 @@ function JPHome({ beans, onOpen, onAdd, onSearch, onExport, syncing }) {
             )}
             {list.map((bean,i) => {
               const r = roastInfo(bean.roastDate);
+              const lastBrew = bean.brews && bean.brews.length > 0 ? bean.brews[0] : null;
+              const suggest  = suggestGrind(bean);
+              const origin  = joinReal([bean.origin, bean.region], ' · ');
+              const source  = joinReal([bean.roaster, bean.process], ' — ');
+              // Fallbacks for sparse beans: last grind / today's estimate
+              const line1 = origin
+                || (lastBrew ? `Grind ${lastBrew.grind} · ${shortDate(lastBrew.date)}` : realVal(bean.roastLevel) || '');
+              const line2 = source
+                || (suggest ? `Today est. ${suggest.suggested}` : lastBrew ? `Grind ${lastBrew.grind}` : '');
               return (
                 <div key={bean.id} className="jp-tap" onClick={()=>onOpen(bean.id)} style={{
                   display:'flex',gap:18,padding:'20px 0',
@@ -447,12 +473,12 @@ function JPHome({ beans, onOpen, onAdd, onSearch, onExport, syncing }) {
                       <div style={{fontFamily:jp.serif,fontSize:22,lineHeight:1.1,color:jp.ink,letterSpacing:-.2}}>{bean.name}</div>
                       <div style={{fontFamily:jp.mono,fontSize:11,color:jp.ink3,letterSpacing:.5,flexShrink:0}}>{String(i+1).padStart(2,'0')}</div>
                     </div>
-                    <div style={{fontFamily:jp.serif,fontSize:14,fontStyle:'italic',color:jp.ink2,marginTop:2}}>
-                      {bean.origin} · {bean.region}
-                    </div>
-                    <div style={{fontFamily:jp.sans,fontSize:11,color:jp.ink3,marginTop:6,letterSpacing:.3}}>
-                      {bean.roaster} — {bean.process}
-                    </div>
+                    {line1 && <div style={{fontFamily:jp.serif,fontSize:14,fontStyle:'italic',color:jp.ink2,marginTop:2}}>
+                      {line1}
+                    </div>}
+                    {line2 && <div style={{fontFamily:jp.sans,fontSize:11,color:jp.ink3,marginTop:6,letterSpacing:.3}}>
+                      {line2}
+                    </div>}
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:10}}>
                       <div style={{display:'flex',gap:8,alignItems:'center'}}>
                         <JPStatusPill status={r.status} label={`${r.label} · ${r.days}d`} small/>
@@ -597,17 +623,17 @@ function JPDetail({ bean, onBack, onLogBrew, onRefreshBag, onEditBrew, onDelete,
               <JPBeanPhoto bean={bean} full/>
               <div style={{position:'absolute',inset:0,background:'linear-gradient(to bottom,transparent 50%,rgba(0,0,0,.4))'}}/>
               <div style={{position:'absolute',bottom:16,left:16,right:16,color:'#f4efe6'}}>
-                <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,opacity:.85}}>{bean.varietal.toUpperCase()}</div>
-                <div style={{fontFamily:jp.serif,fontSize:14,fontStyle:'italic',marginTop:4,opacity:.9}}>{bean.altitude} · {bean.process}</div>
+                {realVal(bean.varietal) && <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,opacity:.85}}>{bean.varietal.toUpperCase()}</div>}
+                {joinReal([bean.altitude, bean.process], ' · ') && <div style={{fontFamily:jp.serif,fontSize:14,fontStyle:'italic',marginTop:4,opacity:.9}}>{joinReal([bean.altitude, bean.process], ' · ')}</div>}
               </div>
             </div>
           </div>
 
           {/* Title */}
           <div style={{padding:'24px 24px 0'}}>
-            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:3,textTransform:'uppercase',color:jp.ink3}}>{bean.origin} — {bean.region}</div>
+            {joinReal([bean.origin, bean.region], ' — ') && <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:3,textTransform:'uppercase',color:jp.ink3}}>{joinReal([bean.origin, bean.region], ' — ')}</div>}
             <h2 style={{fontFamily:jp.serif,fontWeight:500,fontSize:44,lineHeight:1,margin:'10px 0 6px',color:jp.ink,letterSpacing:-.6}}>{bean.name}</h2>
-            <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:17,color:jp.ink2}}>roasted by {bean.roaster}</div>
+            {realVal(bean.roaster) && <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:17,color:jp.ink2}}>roasted by {bean.roaster}</div>}
           </div>
 
           {/* Roast curve */}
@@ -677,7 +703,7 @@ function JPDetail({ bean, onBack, onLogBrew, onRefreshBag, onEditBrew, onDelete,
               ['Shots',     totalShots>currentShots ? `${currentShots} · ${totalShots} total` : String(currentShots)],
               ['฿ / gram',  formatYenFine(pg)],
               ['฿ / shot',  formatYen(ps) + (ps?` (${ESPRESSO_DOSE}g)`:'')],
-            ].map(([k,v])=>(
+            ].filter(([,v])=> v && v!=='—' && v!=='— (18g)').map(([k,v])=>(
               <div key={k}>
                 <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>{k}</div>
                 <div style={{fontFamily:jp.serif,fontSize:17,color:jp.ink,marginTop:4}}>{v}</div>
@@ -804,10 +830,20 @@ function JPDetail({ bean, onBack, onLogBrew, onRefreshBag, onEditBrew, onDelete,
 }
 
 // ─── Add flow ───────────────────────────────────────────────────────────────
-function JPAddFlow({ onClose, onAddBean }) {
-  const [step, setStep] = React.useState('gallery');
-  const [selected, setSelected] = React.useState(null);
-  const [useFilter, setUseFilter] = React.useState(true);
+function JPAddFlow({ onClose, onAddBean, allRoasters }) {
+  const [step,       setStep]       = React.useState('gallery');
+  const [selected,   setSelected]   = React.useState(null);
+  const [finalPhoto, setFinalPhoto] = React.useState(null);
+  const [useFilter,  setUseFilter]  = React.useState(true);
+
+  const stepBack = () => {
+    if (step === 'form')    setStep('filter');
+    else if (step === 'filter') setStep('crop');
+    else if (step === 'crop')   setStep('gallery');
+    else onClose();
+  };
+
+  const centerLabel = step==='gallery'?'Select Photo':step==='crop'?'Adjust Crop':step==='filter'?'Apply Filter':'New Entry';
 
   return (
     <div className="jp-enter-up" style={{position:'absolute',inset:0,background:jp.paper,zIndex:10}}>
@@ -815,15 +851,27 @@ function JPAddFlow({ onClose, onAddBean }) {
         <JPHeader
           left={step==='gallery'
             ? <button onClick={onClose} className="jp-tap" style={{background:'transparent',border:'none',cursor:'pointer',color:jp.ink,fontFamily:jp.sans,fontSize:13,padding:0}}>Close</button>
-            : <button onClick={()=>setStep(step==='form'?'filter':'gallery')} className="jp-tap" style={{background:'transparent',border:'none',cursor:'pointer',color:jp.ink,fontFamily:jp.sans,fontSize:13,padding:0}}>← Back</button>
+            : <button onClick={stepBack} className="jp-tap" style={{background:'transparent',border:'none',cursor:'pointer',color:jp.ink,fontFamily:jp.sans,fontSize:13,padding:0}}>← Back</button>
           }
-          center={step==='gallery'?'Select Photo':step==='filter'?'Apply Filter':'New Entry'}
+          center={centerLabel}
           right={null}
         />
         <div style={{flex:1,overflow:'hidden',position:'relative'}}>
-          {step==='gallery' && <JPGallery onPick={p=>{setSelected(p);setStep('filter');}}/>}
-          {step==='filter' && <JPFilter photo={selected} useFilter={useFilter} setUseFilter={setUseFilter} onNext={()=>setStep('form')}/>}
-          {step==='form'   && <JPForm photo={selected} useFilter={useFilter} onSave={onAddBean}/>}
+          {step==='gallery' && (
+            <JPGallery onPick={p=>{ setSelected(p); setStep('crop'); }}/>
+          )}
+          {step==='crop' && selected && (
+            <JPCrop photo={selected} onDone={url=>{
+              setFinalPhoto({ ...selected, imageUrl: url });
+              setStep('filter');
+            }}/>
+          )}
+          {step==='filter' && finalPhoto && (
+            <JPFilter photo={finalPhoto} useFilter={useFilter} setUseFilter={setUseFilter} onNext={()=>setStep('form')}/>
+          )}
+          {step==='form' && finalPhoto && (
+            <JPForm photo={finalPhoto} useFilter={useFilter} onSave={onAddBean} allRoasters={allRoasters}/>
+          )}
         </div>
       </div>
     </div>
@@ -962,6 +1010,199 @@ function JPFilter({ photo, useFilter, setUseFilter, onNext }) {
   );
 }
 
+// ─── Crop ────────────────────────────────────────────────────────────────────
+// Output aspect ratio for cropped bean photos
+const CROP_W = 800, CROP_H = 1000;   // 4:5
+
+// House filter — baked into the saved image so the choice actually persists
+const HOUSE_FILTER = 'sepia(.22) saturate(1.18) contrast(.94) brightness(.97)';
+function bakeFilter(dataUrl) {
+  return new Promise(resolve => {
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx && 'filter' in ctx) {
+          ctx.filter = HOUSE_FILTER;
+          ctx.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL('image/jpeg', 0.9));
+        } else {
+          resolve(dataUrl);   // ctx.filter unsupported → keep original
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    } catch { resolve(dataUrl); }
+  });
+}
+function JPCrop({ photo, onDone }) {
+  const areaRef  = React.useRef(null);   // available dark space
+  const frameRef = React.useRef(null);   // the actual 4:5 crop window
+  const imgRef   = React.useRef(null);
+  const drag     = React.useRef(null);
+  const [pos,     setPos]     = React.useState({ x:0, y:0, scale:1 });
+  const [frame,   setFrame]   = React.useState(null);   // { w, h } — always 4:5
+  const [imgBase, setImgBase] = React.useState(null);   // image size at cover scale
+
+  // Size the 4:5 frame to the largest box that fits the available area
+  React.useEffect(() => {
+    const measureFrame = () => {
+      const a = areaRef.current;
+      if (!a) return;
+      const aW = a.clientWidth, aH = a.clientHeight;
+      if (!aW || !aH) return;
+      let w = aW, h = aW * CROP_H / CROP_W;
+      if (h > aH) { h = aH; w = aH * CROP_W / CROP_H; }
+      setFrame({ w, h });
+    };
+    measureFrame();
+    window.addEventListener('resize', measureFrame);
+    return () => window.removeEventListener('resize', measureFrame);
+  }, []);
+
+  // Compute the cover scale once we know both the frame and the image
+  const measureImg = React.useCallback(() => {
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth || !frame) return;
+    const bs = Math.max(frame.w / img.naturalWidth, frame.h / img.naturalHeight);
+    setImgBase({ w: img.naturalWidth * bs, h: img.naturalHeight * bs, bs });
+  }, [frame]);
+  React.useEffect(() => { measureImg(); }, [frame, measureImg]);
+
+  // Keep the image always covering the frame (no gaps → no aspect distortion)
+  const clampPos = (p, base) => {
+    if (!frame || !base) return p;
+    const rendW = base.w * p.scale;
+    const rendH = base.h * p.scale;
+    const maxX = Math.max(0, (rendW - frame.w) / 2);
+    const maxY = Math.max(0, (rendH - frame.h) / 2);
+    return {
+      scale: p.scale,
+      x: Math.max(-maxX, Math.min(maxX, p.x)),
+      y: Math.max(-maxY, Math.min(maxY, p.y)),
+    };
+  };
+
+  // Non-passive touchmove to prevent page scroll during crop
+  const moveHandlerRef = React.useRef(null);
+  moveHandlerRef.current = (e) => {
+    e.preventDefault();
+    if (!drag.current) return;
+    if (drag.current.type === 'pan' && e.touches.length === 1) {
+      const dx = e.touches[0].clientX - drag.current.x;
+      const dy = e.touches[0].clientY - drag.current.y;
+      drag.current.x = e.touches[0].clientX;
+      drag.current.y = e.touches[0].clientY;
+      setPos(p => clampPos({ ...p, x: p.x + dx, y: p.y + dy }, imgBase));
+    } else if (drag.current.type === 'pinch' && e.touches.length === 2) {
+      const d = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const ratio = d / drag.current.d;
+      drag.current.d = d;
+      setPos(p => clampPos({ ...p, scale: Math.max(1, Math.min(8, p.scale * ratio)) }, imgBase));
+    }
+  };
+
+  React.useEffect(() => {
+    const el = frameRef.current;
+    if (!el) return;
+    const fn = (e) => moveHandlerRef.current(e);
+    el.addEventListener('touchmove', fn, { passive: false });
+    return () => el.removeEventListener('touchmove', fn);
+  }, [frame]);
+
+  const onTouchStart = (e) => {
+    if (e.touches.length === 1) {
+      drag.current = { type:'pan', x:e.touches[0].clientX, y:e.touches[0].clientY };
+    } else if (e.touches.length === 2) {
+      drag.current = { type:'pinch', d:Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      )};
+    }
+  };
+  const onTouchEnd = () => { drag.current = null; };
+
+  const applyCrop = () => {
+    const img = imgRef.current;
+    if (!img || !imgBase || !frame) { onDone(photo.imageUrl); return; }
+    const totalScale = imgBase.bs * pos.scale;
+    const rendW = img.naturalWidth  * totalScale;
+    const rendH = img.naturalHeight * totalScale;
+    const imgLeft = frame.w/2 + pos.x - rendW/2;
+    const imgTop  = frame.h/2 + pos.y - rendH/2;
+    // Frame is exactly 4:5 and always covered, so the source rect is 4:5 too
+    const sx = Math.max(0, -imgLeft / totalScale);
+    const sy = Math.max(0, -imgTop  / totalScale);
+    const sw = frame.w / totalScale;
+    const sh = frame.h / totalScale;
+    const canvas = document.createElement('canvas');
+    canvas.width = CROP_W; canvas.height = CROP_H;
+    canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, CROP_W, CROP_H);
+    onDone(canvas.toDataURL('image/jpeg', 0.9));
+  };
+
+  return (
+    <div style={{height:'100%',display:'flex',flexDirection:'column'}}>
+      <div style={{padding:'4px 24px 10px',fontFamily:jp.serif,fontStyle:'italic',fontSize:14,color:jp.ink2}}>
+        Drag to reposition · pinch to zoom
+      </div>
+      <div ref={areaRef} style={{flex:1,overflow:'hidden',background:'#111',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        {frame && (
+          <div
+            ref={frameRef}
+            onTouchStart={onTouchStart}
+            onTouchEnd={onTouchEnd}
+            style={{position:'relative',overflow:'hidden',width:frame.w,height:frame.h,touchAction:'none',cursor:'grab'}}
+          >
+            <img
+              ref={imgRef}
+              src={photo.imageUrl}
+              crossOrigin="anonymous"
+              onLoad={measureImg}
+              style={{
+                position:'absolute', top:'50%', left:'50%', maxWidth:'none', pointerEvents:'none',
+                width:  imgBase ? imgBase.w : 'auto',
+                height: imgBase ? imgBase.h : 'auto',
+                opacity: imgBase ? 1 : 0,
+                transform: `translate(calc(-50% + ${pos.x}px), calc(-50% + ${pos.y}px)) scale(${pos.scale})`,
+                transformOrigin:'center center',
+              }}
+            />
+            {/* Rule-of-thirds grid */}
+            <div style={{position:'absolute',inset:0,pointerEvents:'none'}}>
+              {[33.33,66.66].map(p=>(
+                <React.Fragment key={p}>
+                  <div style={{position:'absolute',top:`${p}%`,left:0,right:0,height:1,background:'rgba(255,255,255,.25)'}}/>
+                  <div style={{position:'absolute',left:`${p}%`,top:0,bottom:0,width:1,background:'rgba(255,255,255,.25)'}}/>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{padding:'14px 24px 24px',display:'flex',gap:10}}>
+        <button onClick={()=>onDone(photo.imageUrl)} style={{
+          flex:1,height:44,background:'transparent',color:jp.ink2,
+          border:`1px solid ${jp.rule}`,borderRadius:2,cursor:'pointer',
+          fontFamily:jp.sans,fontSize:11,letterSpacing:2,textTransform:'uppercase',
+        }}>Skip</button>
+        <button onClick={applyCrop} className="jp-tap" style={{
+          flex:2,height:44,background:jp.ink,color:jp.paper,
+          border:'none',borderRadius:2,cursor:'pointer',
+          fontFamily:jp.sans,fontSize:12,letterSpacing:2,textTransform:'uppercase',
+        }}>Crop & Continue</button>
+      </div>
+    </div>
+  );
+}
+
 function JPFormRow({label,placeholder,value,onChange,type='text',inputMode}) {
   return (
     <div style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
@@ -976,31 +1217,46 @@ function JPFormRow({label,placeholder,value,onChange,type='text',inputMode}) {
   );
 }
 
-function JPForm({ photo, useFilter, onSave }) {
+function JPForm({ photo, useFilter, onSave, allRoasters }) {
   const [name,       setName]       = React.useState('');
-  const [origin,     setOrigin]     = React.useState('');
-  const [region,     setRegion]     = React.useState('');
   const [roaster,    setRoaster]    = React.useState('');
-  const [processVal, setProcessVal] = React.useState('');
   const [roastDate,  setRoastDate]  = React.useState('');
+  const [roastLevel, setRoastLevel] = React.useState('');
   const [grams,      setGrams]      = React.useState('');
   const [price,      setPrice]      = React.useState('');
   const [rating,     setRating]     = React.useState(0);
+  const [notes,      setNotes]      = React.useState([]);
+  const [noteInput,  setNoteInput]  = React.useState('');
+  const [showDrop,   setShowDrop]   = React.useState(false);
 
-  const save = () => {
-    if (!name.trim()) return;
+  const filtered = (allRoasters||[]).filter(r =>
+    r.toLowerCase().includes(roaster.toLowerCase()) && r.toLowerCase()!==roaster.toLowerCase()
+  );
+
+  const addNote = () => {
+    const v = noteInput.trim().replace(/^#/,'').replace(/,/g,'').trim();
+    if (v && !notes.find(n=>n.toLowerCase()===v.toLowerCase())) setNotes(ns=>[...ns,v]);
+    setNoteInput('');
+  };
+
+  const [saving, setSaving] = React.useState(false);
+  const save = async () => {
+    if (!name.trim() || saving) return;
+    setSaving(true);
+    const imageUrl = (useFilter && photo.imageUrl)
+      ? await bakeFilter(photo.imageUrl)
+      : photo.imageUrl;
     onSave({
-      name:        name.trim(),
-      origin:      origin.trim()     || '—',
-      region:      region.trim()     || '—',
-      roaster:     roaster.trim()    || '—',
-      process:     processVal.trim() || '—',
-      roastDate:   roastDate         || new Date().toISOString().slice(0,10),
-      gramsLeft:   parseFloat(grams) || 0,
-      weightBought:parseFloat(grams) || 0,
-      pricePaid:   parseFloat(price) || 0,
+      name:         name.trim(),
+      roaster:      roaster.trim() || '—',
+      roastDate:    roastDate || todayISO(),
+      roastLevel:   roastLevel || '—',
+      gramsLeft:    parseFloat(grams) || 0,
+      weightBought: parseFloat(grams) || 0,
+      pricePaid:    parseFloat(price) || 0,
       rating,
-      imageUrl:    photo.imageUrl,
+      notes,
+      imageUrl,
     });
   };
 
@@ -1008,37 +1264,103 @@ function JPForm({ photo, useFilter, onSave }) {
     <div style={{padding:'12px 24px 24px',overflowY:'auto',height:'100%'}}>
       <div style={{display:'flex',gap:16,alignItems:'flex-start',marginBottom:16}}>
         <div style={{width:72,aspectRatio:'4/5',borderRadius:2,overflow:'hidden',flexShrink:0,background:jp.ink}}>
-          <img src={photo.imageUrl} style={{
-            width:'100%',height:'100%',objectFit:'cover',display:'block',
-            filter:useFilter?'sepia(.22) saturate(1.18) contrast(.94) brightness(.97)':'none',
-          }}/>
+          <img src={photo.imageUrl} style={{width:'100%',height:'100%',objectFit:'cover',display:'block',filter:useFilter?'sepia(.22) saturate(1.18) contrast(.94) brightness(.97)':'none'}}/>
         </div>
         <div style={{flex:1,paddingTop:4}}>
           <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Photo</div>
           <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:14,color:jp.ink2,marginTop:4}}>{useFilter?'House filter · warm':'Original'}</div>
         </div>
       </div>
+
       <div className="jp-stagger">
-        <JPFormRow label="Name *"     placeholder="e.g. Konga"   value={name}       onChange={setName}/>
-        <JPFormRow label="Origin"     placeholder="Ethiopia"      value={origin}     onChange={setOrigin}/>
-        <JPFormRow label="Region"     placeholder="Yirgacheffe"   value={region}     onChange={setRegion}/>
-        <JPFormRow label="Roaster"    placeholder="Onibus Coffee"  value={roaster}    onChange={setRoaster}/>
-        <JPFormRow label="Process"    placeholder="Washed"         value={processVal} onChange={setProcessVal}/>
-        <JPFormRow label="Roast Date" placeholder="2026-05-24"    value={roastDate}  onChange={setRoastDate} type="date"/>
-        <JPFormRow label="Grams"      placeholder="250"            value={grams}      onChange={setGrams} type="number" inputMode="numeric"/>
-        <JPFormRow label="Price (฿)"  placeholder="2400"           value={price}      onChange={setPrice} type="number" inputMode="numeric"/>
+        {/* Name */}
+        <JPFormRow label="Name *" placeholder="e.g. Konga" value={name} onChange={setName}/>
+
+        {/* Roaster + dropdown */}
+        <div style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`,position:'relative',zIndex:showDrop?200:1}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:4}}>Roaster</div>
+          <input
+            type="text" value={roaster}
+            onChange={e=>{setRoaster(e.target.value);setShowDrop(true);}}
+            onFocus={()=>setShowDrop(true)}
+            onBlur={()=>setTimeout(()=>setShowDrop(false),200)}
+            placeholder="e.g. Onibus Coffee"
+            style={{width:'100%',border:'none',background:'transparent',fontFamily:jp.serif,fontSize:19,color:jp.ink,padding:0}}
+          />
+          {showDrop && filtered.length>0 && (
+            <div style={{position:'absolute',left:0,right:0,top:'100%',zIndex:200,background:jp.card,border:`1px solid ${jp.rule}`,borderRadius:2,boxShadow:'0 4px 16px rgba(0,0,0,.15)'}}>
+              {filtered.map(r=>(
+                <div key={r} onPointerDown={e=>{e.preventDefault();setRoaster(r);setShowDrop(false);}}
+                  style={{padding:'11px 14px',fontFamily:jp.serif,fontSize:17,color:jp.ink,cursor:'pointer',borderBottom:`1px solid ${jp.rule}`}}>{r}</div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Roast Date */}
+        <JPFormRow label="Roast Date" placeholder="" value={roastDate} onChange={setRoastDate} type="date"/>
+
+        {/* Roast Level */}
+        <div style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:10}}>Roast Level</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+            {ROAST_LEVELS.map(lv=>{
+              const sel = roastLevel===lv;
+              return <button key={lv} onPointerDown={e=>{e.preventDefault();setRoastLevel(sel?'':lv);}} style={{padding:'6px 16px',borderRadius:20,cursor:'pointer',border:`1px solid ${sel?jp.ink:jp.rule}`,background:sel?jp.ink:'transparent',color:sel?jp.paper:jp.ink2,fontFamily:jp.sans,fontSize:12,letterSpacing:1.2}}>{lv}</button>;
+            })}
+          </div>
+        </div>
+
+        {/* Tasting Notes */}
+        <div style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
+          <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:10}}>Tasting Notes</div>
+          {notes.length>0 && (
+            <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:10}}>
+              {notes.map(n=>(
+                <span key={n} onClick={()=>setNotes(ns=>ns.filter(x=>x!==n))} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'5px 12px',borderRadius:20,cursor:'pointer',border:`1px solid ${jp.rule}`,background:jp.card,fontFamily:jp.serif,fontSize:14,color:jp.ink,fontStyle:'italic'}}>
+                  {n}<span style={{color:jp.ink3,fontSize:10,lineHeight:1,fontStyle:'normal'}}>×</span>
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <span style={{fontFamily:jp.mono,fontSize:13,color:jp.ink3}}>#</span>
+            <input type="text" value={noteInput} onChange={e=>setNoteInput(e.target.value)}
+              onKeyDown={e=>{if(e.key==='Enter'||e.key===','){e.preventDefault();addNote();}}}
+              placeholder="jasmine · enter to add"
+              style={{flex:1,border:'none',background:'transparent',fontFamily:jp.serif,fontSize:17,color:jp.ink,padding:0,fontStyle:'italic'}}/>
+            <button onPointerDown={e=>{e.preventDefault();addNote();}} style={{background:'transparent',border:'none',cursor:'pointer',fontFamily:jp.sans,fontSize:11,color:jp.ink3,letterSpacing:1.2,textTransform:'uppercase',flexShrink:0}}>Add</button>
+          </div>
+        </div>
+
+        {/* Grams + Price */}
+        <div style={{display:'flex',gap:24}}>
+          <div style={{flex:1,padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:4}}>Grams</div>
+            <input type="number" inputMode="numeric" placeholder="250" value={grams} onChange={e=>setGrams(e.target.value)}
+              style={{width:'100%',border:'none',background:'transparent',fontFamily:jp.serif,fontSize:19,color:jp.ink,padding:0}}/>
+          </div>
+          <div style={{flex:1,padding:'16px 0',borderBottom:`1px solid ${jp.rule}`}}>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:4}}>Price (฿)</div>
+            <input type="number" inputMode="numeric" placeholder="2400" value={price} onChange={e=>setPrice(e.target.value)}
+              style={{width:'100%',border:'none',background:'transparent',fontFamily:jp.serif,fontSize:19,color:jp.ink,padding:0}}/>
+          </div>
+        </div>
+
+        {/* Rating */}
         <div style={{padding:'16px 0',borderBottom:`1px solid ${jp.rule}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Rating</div>
           <JPStars rating={rating} onChange={setRating} size={18}/>
         </div>
       </div>
-      <button onClick={save} className="jp-tap" style={{
+
+      <button onClick={save} disabled={saving} className="jp-tap" style={{
         width:'100%',marginTop:28,height:54,
         background:name.trim()?jp.ink:'rgba(26,22,20,.2)',
         color:jp.paper,border:'none',borderRadius:2,
         fontFamily:jp.sans,fontSize:12,letterSpacing:3,textTransform:'uppercase',cursor:'pointer',
         transition:'background .2s',
-      }}>Add to Shelf</button>
+      }}>{saving ? 'Saving…' : 'Add to Shelf'}</button>
     </div>
   );
 }
@@ -1109,7 +1431,7 @@ function JPSearch({ beans, onPick, onClose }) {
               <JPBeanPhoto bean={bean} size={44}/>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontFamily:jp.serif,fontSize:19,color:jp.ink,lineHeight:1.2}}>{bean.name}</div>
-                <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:13,color:jp.ink2,marginTop:2}}>{bean.origin} · {bean.roaster}</div>
+                {joinReal([bean.origin, bean.roaster], ' · ') && <div style={{fontFamily:jp.serif,fontStyle:'italic',fontSize:13,color:jp.ink2,marginTop:2}}>{joinReal([bean.origin, bean.roaster], ' · ')}</div>}
               </div>
               <JPStatusPill status={r.status} label={r.label} small/>
             </div>
@@ -1122,8 +1444,10 @@ function JPSearch({ beans, onPick, onClose }) {
 
 // ─── Log brew sheet ──────────────────────────────────────────────────────────
 function JPLogBrewSheet({ bean, onSave, onClose }) {
-  const [dose,  setDose]  = React.useState('18.0');
-  const [note,  setNote]  = React.useState('');
+  const [dose,      setDose]      = React.useState('18.0');
+  const [note,      setNote]      = React.useState('');
+  const [brewDate,  setBrewDate]  = React.useState(todayISO());
+  const [showDate,  setShowDate]  = React.useState(false);
   const suggest = suggestGrind(bean);
   const [grind, setGrind] = React.useState(
     suggest ? String(suggest.suggested) :
@@ -1132,11 +1456,12 @@ function JPLogBrewSheet({ bean, onSave, onClose }) {
 
   const pg = pricePerGram(bean);
   const shotCost = pg && parseFloat(dose) ? pg * parseFloat(dose) : null;
+  const isToday = brewDate === todayISO();
 
   const save = () => {
     const d = parseFloat(dose);
     if (!d || !grind.trim()) return;
-    onSave(d, grind.trim(), note.trim());
+    onSave(d, grind.trim(), note.trim(), brewDate);
   };
 
   return (
@@ -1156,8 +1481,26 @@ function JPLogBrewSheet({ bean, onSave, onClose }) {
             <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3}}>Brew Log</div>
             <div style={{fontFamily:jp.serif,fontSize:22,color:jp.ink,marginTop:4,letterSpacing:-.2}}>{bean.name}</div>
           </div>
-          <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:22,color:jp.ink3,lineHeight:1,cursor:'pointer'}}>×</button>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <button onClick={()=>setShowDate(v=>!v)} style={{
+              background:'transparent',border:`1px solid ${isToday?jp.rule:jp.ink}`,borderRadius:20,
+              padding:'5px 12px',cursor:'pointer',fontFamily:jp.mono,fontSize:10,color:isToday?jp.ink3:jp.ink,
+            }}>
+              {isToday ? 'Today' : brewDate}
+            </button>
+            <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:22,color:jp.ink3,lineHeight:1,cursor:'pointer'}}>×</button>
+          </div>
         </div>
+
+        {showDate && (
+          <div style={{marginBottom:20,padding:'12px 0',borderBottom:`1px solid ${jp.rule}`}}>
+            <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:8}}>Brew Date</div>
+            <input type="date" value={brewDate} max={todayISO()}
+              onChange={e=>{setBrewDate(e.target.value);setShowDate(false);}}
+              style={{width:'100%',border:'none',background:'transparent',fontFamily:jp.serif,fontSize:28,color:jp.ink,padding:0}}
+            />
+          </div>
+        )}
 
         {/* Dose */}
         <div style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:16,marginBottom:16}}>
@@ -1395,24 +1738,24 @@ function JPEditBeanSheet({ bean, allRoasters, onSave, onClose }) {
         </div>
 
         {/* Roaster dropdown */}
-        <div style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:12,marginBottom:16,position:'relative'}}>
+        <div style={{borderBottom:`1px solid ${jp.rule}`,paddingBottom:12,marginBottom:16,position:'relative',zIndex:showDrop?200:1}}>
           <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2,textTransform:'uppercase',color:jp.ink3,marginBottom:6}}>Roaster</div>
           <input
             type="text" value={roaster}
             onChange={e=>{ setRoaster(e.target.value); setShowDrop(true); }}
             onFocus={()=>setShowDrop(true)}
-            onBlur={()=>setTimeout(()=>setShowDrop(false),150)}
+            onBlur={()=>setTimeout(()=>setShowDrop(false),200)}
             placeholder="e.g. Onibus Coffee"
             style={{...inBase,fontSize:22}}
           />
           {showDrop && filtered.length > 0 && (
             <div style={{
-              position:'absolute',left:0,right:0,top:'100%',zIndex:10,
+              position:'absolute',left:0,right:0,top:'100%',zIndex:200,
               background:jp.card,border:`1px solid ${jp.rule}`,borderRadius:2,
-              boxShadow:'0 4px 16px rgba(0,0,0,.1)',
+              boxShadow:'0 4px 16px rgba(0,0,0,.15)',
             }}>
               {filtered.map(r => (
-                <div key={r} onMouseDown={()=>{ setRoaster(r); setShowDrop(false); }} style={{
+                <div key={r} onPointerDown={e=>{e.preventDefault();setRoaster(r);setShowDrop(false);}} style={{
                   padding:'11px 14px',fontFamily:jp.serif,fontSize:17,color:jp.ink,cursor:'pointer',
                   borderBottom:`1px solid ${jp.rule}`,
                 }}>{r}</div>
@@ -1468,7 +1811,7 @@ function JPEditBeanSheet({ bean, allRoasters, onSave, onClose }) {
               placeholder="jasmine · enter to add"
               style={{flex:1,border:'none',background:'transparent',fontFamily:jp.serif,fontSize:17,color:jp.ink,padding:0,fontStyle:'italic'}}
             />
-            <button onMouseDown={addNote} style={{
+            <button onPointerDown={e=>{e.preventDefault();addNote();}} style={{
               background:'transparent',border:'none',cursor:'pointer',
               fontFamily:jp.sans,fontSize:11,color:jp.ink3,letterSpacing:1.2,textTransform:'uppercase',flexShrink:0,
             }}>Add</button>
@@ -1531,17 +1874,18 @@ function AppJapandi() {
     saveTimer.current = setTimeout(async () => {
       try {
         await sb.from('grind_data').upsert({ id: 1, beans, updated_at: new Date().toISOString() });
-      } catch {}
+      } catch (e) { console.error('Supabase save failed', e); }
       setSyncing(false);
     }, 1000);
   }, [beans]);
 
   const open = id => setView({ name:'detail', bean:id });
 
-  const addBrew = (beanId, dose, grind, note='') => {
+  const addBrew = (beanId, dose, grind, note='', date=todayISO()) => {
     setBeans(bs => bs.map(b => b.id!==beanId ? b : {
       ...b,
-      brews: [{ id:'br-'+(++_brewId), date:TODAY.toISOString().slice(0,10), dose, grind, note }, ...b.brews],
+      brews: [{ id:'br-'+(++_brewId), date, dose, grind, note }, ...b.brews]
+        .sort((a,b) => b.date.localeCompare(a.date)),
       gramsLeft: Math.max(0, b.gramsLeft - dose),
     }));
     setLogBrewFor(null);
@@ -1569,7 +1913,7 @@ function AppJapandi() {
 
   const exportData = async () => {
     const json = JSON.stringify(beans, null, 2);
-    const filename = `thegrind-${TODAY.toISOString().slice(0,10)}.json`;
+    const filename = `thegrind-${todayISO()}.json`;
     if (navigator.share && navigator.canShare) {
       try {
         const file = new File([json], filename, {type:'application/json'});
@@ -1630,16 +1974,16 @@ function AppJapandi() {
     const newBean = {
       id,
       name:         data.name,
-      origin:       data.origin,
-      region:       data.region,
-      roaster:      data.roaster,
-      process:      data.process,
+      origin:       data.origin  || '—',
+      region:       data.region  || '—',
+      roaster:      data.roaster || '—',
+      process:      data.process || '—',
       varietal:     '—',
       altitude:     '—',
-      roastLevel:   '—',
+      roastLevel:   data.roastLevel || '—',
       roastDate:    data.roastDate,
       rating:       data.rating,
-      notes:        [],
+      notes:        data.notes  || [],
       description:  '',
       tone:         ['#c89878','#5a3820'],
       gramsLeft:    data.gramsLeft,
@@ -1665,12 +2009,12 @@ function AppJapandi() {
       </div>
 
       {/* Overlays */}
-      {adding    && <JPAddFlow onClose={()=>setAdding(false)} onAddBean={addBean}/>}
+      {adding    && <JPAddFlow onClose={()=>setAdding(false)} onAddBean={addBean} allRoasters={[...new Set(beans.map(b=>b.roaster).filter(r=>r&&r!=='—'))].sort()}/>}
       {searching && <JPSearch beans={beans} onPick={id=>{setSearching(false);open(id);}} onClose={()=>setSearching(false)}/>}
       {logBrewFor && (
         <JPLogBrewSheet
           bean={beans.find(b=>b.id===logBrewFor)}
-          onSave={(dose,grind,note)=>addBrew(logBrewFor,dose,grind,note)}
+          onSave={(dose,grind,note,date)=>addBrew(logBrewFor,dose,grind,note,date)}
           onClose={()=>setLogBrewFor(null)}
         />
       )}
