@@ -2120,17 +2120,24 @@ function AppJapandi() {
     const beans = pendingRef.current;
     writingRef.current = true;
     setSyncing(true);
-    const { error } = await sb.from('grind_data')
-      .upsert({ id: 1, beans, updated_at: new Date().toISOString() });
+    let ok = false;
+    try {
+      // supabase-js returns {error} on logical failure but can also *throw*
+      // on a network abort (e.g. tab backgrounded mid-request). Handle both,
+      // otherwise writingRef stays true forever and every later save is blocked.
+      const { error } = await sb.from('grind_data')
+        .upsert({ id: 1, beans, updated_at: new Date().toISOString() });
+      ok = !error;
+      if (error) console.error('Supabase save error:', error);
+    } catch (e) {
+      console.error('Supabase save threw:', e);
+    }
     writingRef.current = false;
-    if (error) {
-      // supabase-js returns {error} rather than throwing — must check it explicitly
-      console.error('Supabase save failed:', error);
+    if (!ok) {
       setSaveError(true);
       setSyncing(false);
-      // leave pendingRef in place and retry shortly
       clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(flush, 3000);
+      saveTimer.current = setTimeout(flush, 3000);   // keep pending, retry
       return;
     }
     setSaveError(false);
@@ -2147,19 +2154,33 @@ function AppJapandi() {
     saveTimer.current = setTimeout(flush, 400);
   }, [flush]);
 
+  // Single source of truth for the current beans, immune to stale closures.
+  // commit() applies a user edit (updates ref + state + queues a save);
+  // syncFromServer() applies remote/initial data without triggering a save.
+  const beansRef = React.useRef([]);
+  const commit = React.useCallback((next) => {
+    beansRef.current = next;
+    setBeans(next);
+    saveToSupabase(next);
+  }, [saveToSupabase]);
+  const syncFromServer = React.useCallback((next) => {
+    beansRef.current = next;
+    setBeans(next);
+  }, []);
+
   // Load from Supabase on mount — single source of truth
   React.useEffect(() => {
     sb.from('grind_data').select('beans').eq('id', 1).single()
       .then(({ data }) => {
-        setBeans(data?.beans?.length ? data.beans : []);
+        syncFromServer(data?.beans?.length ? data.beans : []);
         setLoading(false);
       })
-      .catch(() => { setBeans([]); setLoading(false); });
+      .catch(() => { syncFromServer([]); setLoading(false); });
 
     const ch = sb.channel('grind')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'grind_data' }, ({ new: row }) => {
         // Ignore echoes of our own in-flight/pending write to avoid clobbering newer local edits
-        if (row?.beans && !writingRef.current && pendingRef.current == null) setBeans(row.beans);
+        if (row?.beans && !writingRef.current && pendingRef.current == null) syncFromServer(row.beans);
       })
       .subscribe();
 
@@ -2174,7 +2195,7 @@ function AppJapandi() {
       document.removeEventListener('visibilitychange', onHide);
       window.removeEventListener('pagehide', flushNow);
     };
-  }, [flush]);
+  }, [flush, syncFromServer]);
 
   const open = id => setView({ name:'detail', bean:id });
 
@@ -2188,8 +2209,7 @@ function AppJapandi() {
         const imported = Array.isArray(data) ? data : data.beans;
         if (!Array.isArray(imported) || !imported.length) { alert('ไฟล์ไม่ถูกต้อง'); return; }
         if (window.confirm(`Import ${imported.length} beans? ข้อมูลปัจจุบันจะถูกแทนที่`)) {
-          setBeans(imported);
-          saveToSupabase(imported);
+          commit(imported);
         }
       } catch { alert('ไฟล์ JSON ไม่ถูกต้อง'); }
     };
@@ -2199,33 +2219,33 @@ function AppJapandi() {
 
   const addBrew = (beanId, dose, grind, note='', date=todayISO()) => {
     haptic(12);
-    const next = beans.map(b => b.id!==beanId ? b : {
+    const next = beansRef.current.map(b => b.id!==beanId ? b : {
       ...b,
       brews: [{ id:'br-'+(++_brewId), date, dose, grind, note }, ...b.brews]
         .sort((a,b) => b.date.localeCompare(a.date)),
       gramsLeft: Math.max(0, b.gramsLeft - dose),
     });
-    setBeans(next); saveToSupabase(next);
+    commit(next);
     setLogBrewFor(null);
   };
 
   const saveEditBrew = (beanId, updated) => {
-    const next = beans.map(b => {
+    const next = beansRef.current.map(b => {
       if (b.id!==beanId) return b;
       const newBrews = b.brews.map(br=>br.id===updated.id?updated:br);
       return { ...b, brews:newBrews, gramsLeft:Math.max(0,b.weightBought-newBrews.reduce((s,br)=>s+br.dose,0)) };
     });
-    setBeans(next); saveToSupabase(next);
+    commit(next);
     setEditBrewFor(null);
   };
 
   const deleteBrewEntry = (beanId, brewId) => {
-    const next = beans.map(b => {
+    const next = beansRef.current.map(b => {
       if (b.id!==beanId) return b;
       const newBrews = b.brews.filter(br=>br.id!==brewId);
       return { ...b, brews:newBrews, gramsLeft:Math.max(0,b.weightBought-newBrews.reduce((s,br)=>s+br.dose,0)) };
     });
-    setBeans(next); saveToSupabase(next);
+    commit(next);
     setEditBrewFor(null);
   };
 
@@ -2250,18 +2270,18 @@ function AppJapandi() {
   };
 
   const updateRating = (beanId, rating) => {
-    const next = beans.map(b => b.id!==beanId ? b : {...b, rating});
-    setBeans(next); saveToSupabase(next);
+    const next = beansRef.current.map(b => b.id!==beanId ? b : {...b, rating});
+    commit(next);
   };
 
   const deleteBean = (beanId) => {
-    const next = beans.filter(b => b.id !== beanId);
-    setBeans(next); saveToSupabase(next);
+    const next = beansRef.current.filter(b => b.id !== beanId);
+    commit(next);
     setView({ name:'home', bean:null });
   };
 
   const refreshBag = (beanId, newBagData) => {
-    const next = beans.map(b => {
+    const next = beansRef.current.map(b => {
       if (b.id !== beanId) return b;
       const archivedBag = {
         id: b.id + '_bag' + Date.now(),
@@ -2272,13 +2292,13 @@ function AppJapandi() {
         pricePaid: newBagData.pricePaid, gramsLeft: newBagData.weightBought,
         brews: [], bags: [...(b.bags||[]), archivedBag] };
     });
-    setBeans(next); saveToSupabase(next);
+    commit(next);
     setRefreshFor(null);
   };
 
   const saveBeanEdits = (updated) => {
-    const next = beans.map(b => b.id === updated.id ? updated : b);
-    setBeans(next); saveToSupabase(next);
+    const next = beansRef.current.map(b => b.id === updated.id ? updated : b);
+    commit(next);
     setEditBeanFor(null);
   };
 
@@ -2306,8 +2326,8 @@ function AppJapandi() {
       imageUrl:     data.imageUrl || null,
     };
     haptic(18);
-    const next = [newBean, ...beans];
-    setBeans(next); saveToSupabase(next);
+    const next = [newBean, ...beansRef.current];
+    commit(next);
     setAdding(false);
   };
 
