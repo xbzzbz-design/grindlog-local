@@ -53,6 +53,7 @@
     @keyframes jpStarPop { 0% { transform: scale(.6); opacity:0; } 60% { transform: scale(1.15); opacity:1; } 100% { transform: scale(1); opacity:1; } }
     @keyframes jpProgress { from { transform: scaleX(0); } to { transform: scaleX(var(--p,1)); } }
     @keyframes jpShimmer  { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+    @keyframes jpSlide    { 0% { left:-40%; } 100% { left:100%; } }
     .jp-star-pop      { animation: jpStarPop .35s cubic-bezier(.34,1.56,.64,1) both; }
     .jp-progress-fill { transform-origin: left; animation: jpProgress 1.1s cubic-bezier(.22,1,.36,1) .3s both; }
 
@@ -1102,23 +1103,28 @@ const CROP_W = 800, CROP_H = 1000;   // 4:5
 
 // House filter — baked into the saved image so the choice actually persists
 const HOUSE_FILTER = 'sepia(.22) saturate(1.18) contrast(.94) brightness(.97)';
-function bakeFilter(dataUrl) {
+const MAX_IMG_DIM = 1200;   // longest edge of any stored bean photo
+
+// Every saved photo goes through here: downscale to MAX_IMG_DIM and
+// re-encode as JPEG (optionally with the house filter baked in) so a
+// raw 4MB camera shot never ends up in the database.
+function finalizeImage(dataUrl, useFilter) {
   return new Promise(resolve => {
     try {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (!w || !h) { resolve(dataUrl); return; }
+        const scale = Math.min(1, MAX_IMG_DIM / Math.max(w, h));
+        w = Math.round(w * scale); h = Math.round(h * scale);
         const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
+        canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
-        if (ctx && 'filter' in ctx) {
-          ctx.filter = HOUSE_FILTER;
-          ctx.drawImage(img, 0, 0);
-          resolve(canvas.toDataURL('image/jpeg', 0.9));
-        } else {
-          resolve(dataUrl);   // ctx.filter unsupported → keep original
-        }
+        if (!ctx) { resolve(dataUrl); return; }
+        if (useFilter && 'filter' in ctx) ctx.filter = HOUSE_FILTER;
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
       };
       img.onerror = () => resolve(dataUrl);
       img.src = dataUrl;
@@ -1304,9 +1310,7 @@ function JPPhotoFlow({ onDone, onClose }) {
 
   const handleDone = async () => {
     if (!finalPhoto) return;
-    const url = (useFilter && finalPhoto.imageUrl)
-      ? await bakeFilter(finalPhoto.imageUrl)
-      : finalPhoto.imageUrl;
+    const url = finalPhoto.imageUrl ? await finalizeImage(finalPhoto.imageUrl, useFilter) : null;
     onDone(url);
   };
 
@@ -1377,9 +1381,7 @@ function JPForm({ photo, useFilter, onSave, allRoasters }) {
   const save = async () => {
     if (!name.trim() || saving) return;
     setSaving(true);
-    const imageUrl = (useFilter && photo.imageUrl)
-      ? await bakeFilter(photo.imageUrl)
-      : photo.imageUrl;
+    const imageUrl = photo.imageUrl ? await finalizeImage(photo.imageUrl, useFilter) : null;
     onSave({
       name:         name.trim(),
       roaster:      roaster.trim() || '—',
@@ -2312,11 +2314,12 @@ function AppJapandi() {
   const currentBean = view.bean ? beans.find(b=>b.id===view.bean) : null;
 
   if (loading) return (
-    <div style={{width:'100%',height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:jp.paper,gap:16}}>
-      <div style={{fontFamily:jp.serif,fontSize:36,fontStyle:'italic',color:jp.ink,letterSpacing:-.5}}>the grind</div>
-      <div style={{width:32,height:2,background:jp.rule,borderRadius:1,overflow:'hidden',position:'relative'}}>
-        <div style={{position:'absolute',inset:0,background:jp.ink3,animation:'jpShimmer 1s ease-in-out infinite'}}/>
+    <div className="jp-paper" style={{width:'100%',height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:jp.paper,gap:18}}>
+      <div style={{fontFamily:jp.serif,fontSize:40,fontStyle:'italic',color:jp.ink,letterSpacing:-.5}}>the grind</div>
+      <div style={{width:120,height:2,background:jp.rule,borderRadius:1,overflow:'hidden',position:'relative'}}>
+        <div style={{position:'absolute',top:0,bottom:0,width:'40%',background:jp.ink,borderRadius:1,animation:'jpSlide 1.1s ease-in-out infinite'}}/>
       </div>
+      <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2.5,textTransform:'uppercase',color:jp.ink3}}>Syncing your shelf…</div>
     </div>
   );
 
