@@ -2083,12 +2083,8 @@ function JPEditBeanSheet({ bean, allRoasters, onSave, onClose }) {
 
 // ─── App root ────────────────────────────────────────────────────────────────
 function AppJapandi() {
-  const [beans, setBeans] = React.useState(() => {
-    try {
-      const s = localStorage.getItem('thegrind-beans');
-      return s ? JSON.parse(s) : INITIAL_BEANS;
-    } catch { return INITIAL_BEANS; }
-  });
+  const [beans,   setBeans]   = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
   const [view,  setView]  = React.useState({ name:'home', bean:null });
   const [adding,      setAdding]      = React.useState(false);
   const [searching,   setSearching]   = React.useState(false);
@@ -2110,36 +2106,28 @@ function AppJapandi() {
     localStorage.setItem('thegrind-dark', next ? '1' : '0');
     setDark(next);
   };
-  const skipSave  = React.useRef(false);
   const saveTimer = React.useRef(null);
-  const isMounted = React.useRef(false);
 
-  // Load from Supabase on mount + real-time listener
+  // Load from Supabase on mount — single source of truth
   React.useEffect(() => {
     sb.from('grind_data').select('beans').eq('id', 1).single()
       .then(({ data }) => {
-        if (data?.beans?.length) { skipSave.current = true; setBeans(data.beans); }
-      }).catch(() => {});
+        setBeans(data?.beans?.length ? data.beans : []);
+        setLoading(false);
+      })
+      .catch(() => { setBeans([]); setLoading(false); });
 
     const ch = sb.channel('grind')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'grind_data' }, ({ new: row }) => {
-        if (row?.beans) { skipSave.current = true; setBeans(row.beans); }
+        if (row?.beans) setBeans(row.beans);
       })
       .subscribe();
 
     return () => sb.removeChannel(ch);
   }, []);
 
-  // Save to Supabase + localStorage on every change (debounced)
-  React.useEffect(() => {
-    try { localStorage.setItem('thegrind-beans', JSON.stringify(beans)); } catch {}
-
-    // Never save on the very first run — localStorage on mount must not overwrite Supabase
-    if (!isMounted.current) { isMounted.current = true; return; }
-
-    // Supabase just loaded fresh data — cancel any stale timer and skip
-    if (skipSave.current) { skipSave.current = false; clearTimeout(saveTimer.current); return; }
-
+  // Save to Supabase on every user-driven change (debounced 1s)
+  const saveToSupabase = React.useCallback((beans) => {
     clearTimeout(saveTimer.current);
     setSyncing(true);
     saveTimer.current = setTimeout(async () => {
@@ -2148,7 +2136,7 @@ function AppJapandi() {
       } catch (e) { console.error('Supabase save failed', e); }
       setSyncing(false);
     }, 1000);
-  }, [beans]);
+  }, []);
 
   const open = id => setView({ name:'detail', bean:id });
 
@@ -2162,8 +2150,8 @@ function AppJapandi() {
         const imported = Array.isArray(data) ? data : data.beans;
         if (!Array.isArray(imported) || !imported.length) { alert('ไฟล์ไม่ถูกต้อง'); return; }
         if (window.confirm(`Import ${imported.length} beans? ข้อมูลปัจจุบันจะถูกแทนที่`)) {
-          skipSave.current = false;
           setBeans(imported);
+          saveToSupabase(imported);
         }
       } catch { alert('ไฟล์ JSON ไม่ถูกต้อง'); }
     };
@@ -2173,32 +2161,33 @@ function AppJapandi() {
 
   const addBrew = (beanId, dose, grind, note='', date=todayISO()) => {
     haptic(12);
-    setBeans(bs => bs.map(b => b.id!==beanId ? b : {
+    const next = beans.map(b => b.id!==beanId ? b : {
       ...b,
       brews: [{ id:'br-'+(++_brewId), date, dose, grind, note }, ...b.brews]
         .sort((a,b) => b.date.localeCompare(a.date)),
       gramsLeft: Math.max(0, b.gramsLeft - dose),
-    }));
+    });
+    setBeans(next); saveToSupabase(next);
     setLogBrewFor(null);
   };
 
   const saveEditBrew = (beanId, updated) => {
-    setBeans(bs => bs.map(b => {
+    const next = beans.map(b => {
       if (b.id!==beanId) return b;
       const newBrews = b.brews.map(br=>br.id===updated.id?updated:br);
-      const used = newBrews.reduce((s,br)=>s+br.dose,0);
-      return { ...b, brews:newBrews, gramsLeft:Math.max(0,b.weightBought-used) };
-    }));
+      return { ...b, brews:newBrews, gramsLeft:Math.max(0,b.weightBought-newBrews.reduce((s,br)=>s+br.dose,0)) };
+    });
+    setBeans(next); saveToSupabase(next);
     setEditBrewFor(null);
   };
 
   const deleteBrewEntry = (beanId, brewId) => {
-    setBeans(bs => bs.map(b => {
+    const next = beans.map(b => {
       if (b.id!==beanId) return b;
       const newBrews = b.brews.filter(br=>br.id!==brewId);
-      const used = newBrews.reduce((s,br)=>s+br.dose,0);
-      return { ...b, brews:newBrews, gramsLeft:Math.max(0,b.weightBought-used) };
-    }));
+      return { ...b, brews:newBrews, gramsLeft:Math.max(0,b.weightBought-newBrews.reduce((s,br)=>s+br.dose,0)) };
+    });
+    setBeans(next); saveToSupabase(next);
     setEditBrewFor(null);
   };
 
@@ -2223,40 +2212,35 @@ function AppJapandi() {
   };
 
   const updateRating = (beanId, rating) => {
-    setBeans(bs => bs.map(b => b.id!==beanId ? b : {...b, rating}));
+    const next = beans.map(b => b.id!==beanId ? b : {...b, rating});
+    setBeans(next); saveToSupabase(next);
   };
 
   const deleteBean = (beanId) => {
-    setBeans(bs => bs.filter(b => b.id !== beanId));
+    const next = beans.filter(b => b.id !== beanId);
+    setBeans(next); saveToSupabase(next);
     setView({ name:'home', bean:null });
   };
 
   const refreshBag = (beanId, newBagData) => {
-    setBeans(bs => bs.map(b => {
+    const next = beans.map(b => {
       if (b.id !== beanId) return b;
       const archivedBag = {
         id: b.id + '_bag' + Date.now(),
-        roastDate:    b.roastDate,
-        weightBought: b.weightBought,
-        pricePaid:    b.pricePaid,
-        gramsUsed:    b.weightBought - b.gramsLeft,
-        brews:        b.brews,
+        roastDate: b.roastDate, weightBought: b.weightBought,
+        pricePaid: b.pricePaid, gramsUsed: b.weightBought - b.gramsLeft, brews: b.brews,
       };
-      return {
-        ...b,
-        roastDate:    newBagData.roastDate,
-        weightBought: newBagData.weightBought,
-        pricePaid:    newBagData.pricePaid,
-        gramsLeft:    newBagData.weightBought,
-        brews:        [],
-        bags:         [...(b.bags || []), archivedBag],
-      };
-    }));
+      return { ...b, roastDate: newBagData.roastDate, weightBought: newBagData.weightBought,
+        pricePaid: newBagData.pricePaid, gramsLeft: newBagData.weightBought,
+        brews: [], bags: [...(b.bags||[]), archivedBag] };
+    });
+    setBeans(next); saveToSupabase(next);
     setRefreshFor(null);
   };
 
   const saveBeanEdits = (updated) => {
-    setBeans(bs => bs.map(b => b.id === updated.id ? updated : b));
+    const next = beans.map(b => b.id === updated.id ? updated : b);
+    setBeans(next); saveToSupabase(next);
     setEditBeanFor(null);
   };
 
@@ -2284,11 +2268,21 @@ function AppJapandi() {
       imageUrl:     data.imageUrl || null,
     };
     haptic(18);
-    setBeans(bs => [newBean, ...bs]);
+    const next = [newBean, ...beans];
+    setBeans(next); saveToSupabase(next);
     setAdding(false);
   };
 
   const currentBean = view.bean ? beans.find(b=>b.id===view.bean) : null;
+
+  if (loading) return (
+    <div style={{width:'100%',height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:jp.paper,gap:16}}>
+      <div style={{fontFamily:jp.serif,fontSize:36,fontStyle:'italic',color:jp.ink,letterSpacing:-.5}}>the grind</div>
+      <div style={{width:32,height:2,background:jp.rule,borderRadius:1,overflow:'hidden',position:'relative'}}>
+        <div style={{position:'absolute',inset:0,background:jp.ink3,animation:'jpShimmer 1s ease-in-out infinite'}}/>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{width:'100%',height:'100%',position:'relative',overflow:'hidden',background:jp.paper}}>
