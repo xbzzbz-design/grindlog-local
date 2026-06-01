@@ -2341,6 +2341,29 @@ function AppJapandi() {
     setAdding(false);
   };
 
+  // ── Hardware/browser Back closes the top layer instead of exiting the app ──
+  // (also gives the debounced save time to flush before the app would close)
+  const backHandlerRef = React.useRef(null);
+  backHandlerRef.current = () => {
+    if (editBeanFor)            { setEditBeanFor(null);  return true; }
+    if (editBrewFor)            { setEditBrewFor(null);  return true; }
+    if (refreshFor)             { setRefreshFor(null);   return true; }
+    if (logBrewFor)             { setLogBrewFor(null);   return true; }
+    if (searching)              { setSearching(false);   return true; }
+    if (adding)                 { setAdding(false);      return true; }
+    if (view.name === 'detail') { setView({ name:'home', bean:null }); return true; }
+    return false;   // already at home → nothing to close
+  };
+  React.useEffect(() => {
+    history.pushState(null, '');   // prime an entry to absorb the first Back
+    const onPop = () => {
+      if (backHandlerRef.current()) history.pushState(null, '');  // re-arm for next Back
+      else history.back();          // at home → let it actually exit
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
   const currentBean = view.bean ? beans.find(b=>b.id===view.bean) : null;
 
   if (loading) return (

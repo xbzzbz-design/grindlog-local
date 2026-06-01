@@ -1,4 +1,4 @@
-const CACHE = 'thegrind-v19';
+const CACHE = 'thegrind-v20';
 
 const LOCAL = [
   './',
