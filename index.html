@@ -2113,6 +2113,7 @@ function AppJapandi() {
   const saveTimer  = React.useRef(null);
   const pendingRef = React.useRef(null);   // latest beans waiting to be written
   const writingRef = React.useRef(false);  // a write is currently in flight
+  const lastSyncMs = React.useRef(0);      // updated_at (ms) of newest data we hold
 
   // Push pendingRef to Supabase. Retries on failure; keeps pending until it succeeds.
   const flush = React.useCallback(async () => {
@@ -2125,10 +2126,14 @@ function AppJapandi() {
       // supabase-js returns {error} on logical failure but can also *throw*
       // on a network abort (e.g. tab backgrounded mid-request). Handle both,
       // otherwise writingRef stays true forever and every later save is blocked.
-      const { error } = await sb.from('grind_data')
-        .upsert({ id: 1, beans, updated_at: new Date().toISOString() });
+      const { data, error } = await sb.from('grind_data')
+        .upsert({ id: 1, beans, updated_at: new Date().toISOString() })
+        .select('updated_at').single();
       ok = !error;
       if (error) console.error('Supabase save error:', error);
+      // Record the server timestamp of our own write so the realtime echo
+      // of it (and any older, delayed echo) is recognised as stale below.
+      else if (data?.updated_at) lastSyncMs.current = Date.parse(data.updated_at);
     } catch (e) {
       console.error('Supabase save threw:', e);
     }
@@ -2170,17 +2175,22 @@ function AppJapandi() {
 
   // Load from Supabase on mount — single source of truth
   React.useEffect(() => {
-    sb.from('grind_data').select('beans').eq('id', 1).single()
+    sb.from('grind_data').select('beans,updated_at').eq('id', 1).single()
       .then(({ data }) => {
         syncFromServer(data?.beans?.length ? data.beans : []);
+        if (data?.updated_at) lastSyncMs.current = Date.parse(data.updated_at);
         setLoading(false);
       })
       .catch(() => { syncFromServer([]); setLoading(false); });
 
     const ch = sb.channel('grind')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'grind_data' }, ({ new: row }) => {
-        // Ignore echoes of our own in-flight/pending write to avoid clobbering newer local edits
-        if (row?.beans && !writingRef.current && pendingRef.current == null) syncFromServer(row.beans);
+        if (!row?.beans || writingRef.current || pendingRef.current != null) return;
+        // Version guard: only apply events strictly newer than what we hold.
+        // Blocks echoes of our own writes and stale, out-of-order events that
+        // would otherwise revert the screen to older data.
+        const evMs = Date.parse(row.updated_at);
+        if (evMs > lastSyncMs.current) { lastSyncMs.current = evMs; syncFromServer(row.beans); }
       })
       .subscribe();
 
