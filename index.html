@@ -54,6 +54,8 @@
     @keyframes jpProgress { from { transform: scaleX(0); } to { transform: scaleX(var(--p,1)); } }
     @keyframes jpShimmer  { 0%,100% { opacity:.4; } 50% { opacity:1; } }
     @keyframes jpSlide    { 0% { left:-40%; } 100% { left:100%; } }
+    @keyframes jpToast    { from { opacity:0; transform: translate(-50%, 14px); } to { opacity:1; transform: translate(-50%, 0); } }
+    .jp-toast { animation: jpToast .28s cubic-bezier(.22,1,.36,1) both; }
     .jp-star-pop      { animation: jpStarPop .35s cubic-bezier(.34,1.56,.64,1) both; }
     .jp-progress-fill { transform-origin: left; animation: jpProgress 1.1s cubic-bezier(.22,1,.36,1) .3s both; }
 
@@ -109,6 +111,7 @@
 
 <script type="text/babel" data-presets="react">
 // ─── Supabase ──────────────────────────────────────────────────────────────
+const APP_VERSION = 'v21';   // shown on home so we can confirm the live build
 const SUPABASE_URL      = 'https://cgvtlmqvxbobudzkyrcc.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_83YqgHj9bkdnCPPsFLoEDQ_h4kmVx6d';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -438,7 +441,7 @@ function JPHome({ beans, onOpen, onAdd, onSearch, onExport, onImport, syncing, s
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
               <div>
                 <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:3,textTransform:'uppercase',color:jp.ink3,display:'flex',alignItems:'center',gap:7}}>
-                  No. {beans.length.toString().padStart(2,'0')} · Personal Shelf
+                  No. {beans.length.toString().padStart(2,'0')} · Personal Shelf · {APP_VERSION}
                   <span style={{
                     width:5,height:5,borderRadius:'50%',flexShrink:0,
                     background:saveError?jp.warn:syncing?'#c8922a':jp.peak,
@@ -2097,6 +2100,7 @@ function AppJapandi() {
   const [editBeanFor, setEditBeanFor] = React.useState(null);
   const [syncing,     setSyncing]     = React.useState(false);
   const [saveError,   setSaveError]   = React.useState(false);
+  const [toast,       setToast]       = React.useState(null);   // {kind,text}
   const [dark, setDark] = React.useState(() => {
     const stored = localStorage.getItem('thegrind-dark');
     const sys    = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -2141,13 +2145,18 @@ function AppJapandi() {
     if (!ok) {
       setSaveError(true);
       setSyncing(false);
+      setToast({ kind:'err', text:'บันทึกไม่สำเร็จ · กำลังลองใหม่' });
       clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(flush, 3000);   // keep pending, retry
       return;
     }
     setSaveError(false);
     // Only clear pending if nothing newer queued up while we were writing
-    if (pendingRef.current === beans) { pendingRef.current = null; setSyncing(false); }
+    if (pendingRef.current === beans) {
+      pendingRef.current = null;
+      setSyncing(false);
+      setToast({ kind:'ok', text:'บันทึกแล้ว' });
+    }
     else flush();   // newer change arrived mid-write — write again
   }, []);
 
@@ -2172,6 +2181,13 @@ function AppJapandi() {
     beansRef.current = next;
     setBeans(next);
   }, []);
+
+  // Auto-hide the save toast
+  React.useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), toast.kind==='ok' ? 1600 : 2600);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   // Load from Supabase on mount — single source of truth
   React.useEffect(() => {
@@ -2373,6 +2389,7 @@ function AppJapandi() {
         <div style={{position:'absolute',top:0,bottom:0,width:'40%',background:jp.ink,borderRadius:1,animation:'jpSlide 1.1s ease-in-out infinite'}}/>
       </div>
       <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2.5,textTransform:'uppercase',color:jp.ink3}}>Syncing your shelf…</div>
+      <div style={{fontFamily:jp.mono,fontSize:9,color:jp.ink3,opacity:.5}}>{APP_VERSION}</div>
     </div>
   );
 
@@ -2419,6 +2436,21 @@ function AppJapandi() {
           onSave={saveBeanEdits}
           onClose={()=>setEditBeanFor(null)}
         />
+      )}
+
+      {/* Save toast */}
+      {toast && (
+        <div className="jp-toast" style={{
+          position:'absolute',bottom:32,left:'50%',transform:'translateX(-50%)',zIndex:50,
+          display:'flex',alignItems:'center',gap:8,
+          padding:'11px 20px',borderRadius:24,maxWidth:'80%',
+          background:toast.kind==='ok'?jp.ink:jp.warn,color:jp.paper,
+          fontFamily:jp.sans,fontSize:13,letterSpacing:.3,
+          boxShadow:'0 6px 20px rgba(0,0,0,.25)',whiteSpace:'nowrap',
+        }}>
+          <span style={{fontSize:14}}>{toast.kind==='ok'?'✓':'⚠'}</span>
+          {toast.text}
+        </div>
       )}
     </div>
   );
