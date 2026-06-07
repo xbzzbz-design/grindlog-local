@@ -1,13 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#1a1614"/>
-  <!-- cup body -->
-  <path d="M148 200 L148 330 Q148 380 200 380 L312 380 Q364 380 364 330 L364 200 Z" fill="none" stroke="#f4efe6" stroke-width="18" stroke-linejoin="round"/>
-  <!-- handle -->
-  <path d="M364 240 Q420 240 420 280 Q420 320 364 320" fill="none" stroke="#f4efe6" stroke-width="18" stroke-linecap="round"/>
-  <!-- saucer -->
-  <path d="M120 390 Q256 420 392 390" fill="none" stroke="#f4efe6" stroke-width="14" stroke-linecap="round"/>
-  <!-- steam lines -->
-  <path d="M210 168 Q220 148 210 128" fill="none" stroke="#f4efe6" stroke-width="12" stroke-linecap="round" opacity="0.7"/>
-  <path d="M256 160 Q266 140 256 120" fill="none" stroke="#f4efe6" stroke-width="12" stroke-linecap="round" opacity="0.7"/>
-  <path d="M302 168 Q312 148 302 128" fill="none" stroke="#f4efe6" stroke-width="12" stroke-linecap="round" opacity="0.7"/>
+  <rect width="512" height="512" rx="100" fill="#0C0906"/>
+  <text x="256" y="330" font-size="260" text-anchor="middle" fill="#C8A25A">☕</text>
 </svg>
