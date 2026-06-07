@@ -107,16 +107,9 @@
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-
 <script type="text/babel" data-presets="react">
-// ─── Supabase ──────────────────────────────────────────────────────────────
-const APP_VERSION = 'v22';   // shown on home so we can confirm the live build
-const SUPABASE_URL      = 'https://cgvtlmqvxbobudzkyrcc.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_83YqgHj9bkdnCPPsFLoEDQ_h4kmVx6d';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-// Clear stale dirty flag from previous code version
-try { localStorage.removeItem('thegrind-dirty'); } catch {}
+const APP_VERSION = 'v23';
+const STORAGE_KEY = 'thegrind-beans';
 
 // ─── Data ──────────────────────────────────────────────────────────────────
 const TODAY = new Date();
@@ -419,7 +412,7 @@ function JPPeakReminder({ beans, onOpen }) {
 }
 
 // ─── Home ───────────────────────────────────────────────────────────────────
-function JPHome({ beans, onOpen, onAdd, onSearch, onExport, onImport, syncing, saveError, dark, onToggleDark, onQuickLog }) {
+function JPHome({ beans, onOpen, onAdd, onSearch, onExport, onImport, dark, onToggleDark, onQuickLog }) {
   const [filter, setFilter] = React.useState('All');
   const tabs = ['All','Peak','Resting','Archive'];
   const list = beans.filter(b => {
@@ -442,12 +435,7 @@ function JPHome({ beans, onOpen, onAdd, onSearch, onExport, onImport, syncing, s
               <div>
                 <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:3,textTransform:'uppercase',color:jp.ink3,display:'flex',alignItems:'center',gap:7}}>
                   No. {beans.length.toString().padStart(2,'0')} · Personal Shelf · {APP_VERSION}
-                  <span style={{
-                    width:5,height:5,borderRadius:'50%',flexShrink:0,
-                    background:saveError?jp.warn:syncing?'#c8922a':jp.peak,
-                    animation:(syncing||saveError)?'jpShimmer 1s ease-in-out infinite':'none',
-                  }}/>
-                  {saveError && <span style={{color:jp.warn,fontSize:9,letterSpacing:1}}>SAVE FAILED — RETRYING</span>}
+                  <span style={{width:5,height:5,borderRadius:'50%',flexShrink:0,background:jp.peak}}/>
                 </div>
                 <h1 style={{fontFamily:jp.serif,fontWeight:500,fontSize:56,lineHeight:1,margin:'12px 0 4px',color:jp.ink,letterSpacing:-1}}>
                   <span style={{fontStyle:'italic'}}>the</span> grind
@@ -2098,8 +2086,6 @@ function AppJapandi() {
   const [refreshFor,  setRefreshFor]  = React.useState(null);
   const [editBrewFor, setEditBrewFor] = React.useState(null);
   const [editBeanFor, setEditBeanFor] = React.useState(null);
-  const [syncing,     setSyncing]     = React.useState(false);
-  const [saveError,   setSaveError]   = React.useState(false);
   const [toast,       setToast]       = React.useState(null);   // {kind,text}
   const [dark, setDark] = React.useState(() => {
     const stored = localStorage.getItem('thegrind-dark');
@@ -2114,72 +2100,11 @@ function AppJapandi() {
     localStorage.setItem('thegrind-dark', next ? '1' : '0');
     setDark(next);
   };
-  const saveTimer  = React.useRef(null);
-  const pendingRef = React.useRef(null);   // latest beans waiting to be written
-  const writingRef = React.useRef(false);  // a write is currently in flight
-  const lastSyncMs = React.useRef(0);      // updated_at (ms) of newest data we hold
-
-  // Push pendingRef to Supabase. Retries on failure; keeps pending until it succeeds.
-  const flush = React.useCallback(async () => {
-    if (writingRef.current || pendingRef.current == null) return;
-    const beans = pendingRef.current;
-    writingRef.current = true;
-    setSyncing(true);
-    let ok = false;
-    try {
-      // supabase-js returns {error} on logical failure but can also *throw*
-      // on a network abort (e.g. tab backgrounded mid-request). Handle both,
-      // otherwise writingRef stays true forever and every later save is blocked.
-      const { data, error } = await sb.from('grind_data')
-        .upsert({ id: 1, beans, updated_at: new Date().toISOString() })
-        .select('updated_at').single();
-      ok = !error;
-      if (error) console.error('Supabase save error:', error);
-      // Record the server timestamp of our own write so the realtime echo
-      // of it (and any older, delayed echo) is recognised as stale below.
-      else if (data?.updated_at) lastSyncMs.current = Date.parse(data.updated_at);
-    } catch (e) {
-      console.error('Supabase save threw:', e);
-    }
-    writingRef.current = false;
-    if (!ok) {
-      setSaveError(true);
-      setSyncing(false);
-      setToast({ kind:'err', text:'บันทึกไม่สำเร็จ · กำลังลองใหม่' });
-      clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(flush, 3000);   // keep pending, retry
-      return;
-    }
-    setSaveError(false);
-    // Only clear pending if nothing newer queued up while we were writing
-    if (pendingRef.current === beans) {
-      pendingRef.current = null;
-      setSyncing(false);
-      setToast({ kind:'ok', text:'บันทึกแล้ว' });
-    }
-    else flush();   // newer change arrived mid-write — write again
-  }, []);
-
-  // Queue a save. Short debounce coalesces rapid edits (e.g. star taps).
-  const saveToSupabase = React.useCallback((beans) => {
-    pendingRef.current = beans;
-    setSyncing(true);
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(flush, 400);
-  }, [flush]);
-
-  // Single source of truth for the current beans, immune to stale closures.
-  // commit() applies a user edit (updates ref + state + queues a save);
-  // syncFromServer() applies remote/initial data without triggering a save.
   const beansRef = React.useRef([]);
   const commit = React.useCallback((next) => {
     beansRef.current = next;
     setBeans(next);
-    saveToSupabase(next);
-  }, [saveToSupabase]);
-  const syncFromServer = React.useCallback((next) => {
-    beansRef.current = next;
-    setBeans(next);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch {}
   }, []);
 
   // Auto-hide the save toast
@@ -2189,39 +2114,18 @@ function AppJapandi() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Load from Supabase on mount — single source of truth
+  // Load from localStorage on mount
   React.useEffect(() => {
-    sb.from('grind_data').select('beans,updated_at').eq('id', 1).single()
-      .then(({ data }) => {
-        syncFromServer(data?.beans?.length ? data.beans : []);
-        if (data?.updated_at) lastSyncMs.current = Date.parse(data.updated_at);
-        setLoading(false);
-      })
-      .catch(() => { syncFromServer([]); setLoading(false); });
-
-    const ch = sb.channel('grind')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'grind_data' }, ({ new: row }) => {
-        if (!row?.beans || writingRef.current || pendingRef.current != null) return;
-        // Version guard: only apply events strictly newer than what we hold.
-        // Blocks echoes of our own writes and stale, out-of-order events that
-        // would otherwise revert the screen to older data.
-        const evMs = Date.parse(row.updated_at);
-        if (evMs > lastSyncMs.current) { lastSyncMs.current = evMs; syncFromServer(row.beans); }
-      })
-      .subscribe();
-
-    // Flush immediately if the user backgrounds/closes the app before the debounce fires
-    const flushNow = () => { clearTimeout(saveTimer.current); flush(); };
-    const onHide = () => { if (document.visibilityState === 'hidden') flushNow(); };
-    document.addEventListener('visibilitychange', onHide);
-    window.addEventListener('pagehide', flushNow);
-
-    return () => {
-      sb.removeChannel(ch);
-      document.removeEventListener('visibilitychange', onHide);
-      window.removeEventListener('pagehide', flushNow);
-    };
-  }, [flush, syncFromServer]);
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      const parsed = stored ? JSON.parse(stored) : null;
+      if (Array.isArray(parsed) && parsed.length) {
+        beansRef.current = parsed;
+        setBeans(parsed);
+      }
+    } catch {}
+    setLoading(false);
+  }, []);
 
   const open = id => setView({ name:'detail', bean:id });
 
@@ -2388,7 +2292,7 @@ function AppJapandi() {
       <div style={{width:120,height:2,background:jp.rule,borderRadius:1,overflow:'hidden',position:'relative'}}>
         <div style={{position:'absolute',top:0,bottom:0,width:'40%',background:jp.ink,borderRadius:1,animation:'jpSlide 1.1s ease-in-out infinite'}}/>
       </div>
-      <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2.5,textTransform:'uppercase',color:jp.ink3}}>Syncing your shelf…</div>
+      <div style={{fontFamily:jp.sans,fontSize:10,letterSpacing:2.5,textTransform:'uppercase',color:jp.ink3}}>Loading your shelf…</div>
       <div style={{fontFamily:jp.mono,fontSize:9,color:jp.ink3,opacity:.5}}>{APP_VERSION}</div>
     </div>
   );
@@ -2398,7 +2302,7 @@ function AppJapandi() {
       {/* Home / Detail screens */}
       <div className={view.name==='detail'?'jp-screen jp-enter-right':'jp-screen'} key={view.name}>
         {view.name==='home'
-          ? <JPHome beans={beans} onOpen={open} onAdd={()=>setAdding(true)} onSearch={()=>setSearching(true)} onExport={exportData} onImport={importData} syncing={syncing} saveError={saveError} dark={dark} onToggleDark={toggleDark} onQuickLog={id=>setLogBrewFor(id)}/>
+          ? <JPHome beans={beans} onOpen={open} onAdd={()=>setAdding(true)} onSearch={()=>setSearching(true)} onExport={exportData} onImport={importData} dark={dark} onToggleDark={toggleDark} onQuickLog={id=>setLogBrewFor(id)}/>
           : <JPDetail bean={currentBean} onBack={()=>setView({name:'home',bean:null})} onLogBrew={()=>setLogBrewFor(currentBean.id)} onRefreshBag={()=>setRefreshFor(currentBean.id)} onEditBrew={brew=>setEditBrewFor({beanId:currentBean.id,brew})} onDelete={()=>deleteBean(currentBean.id)} onRatingChange={r=>updateRating(currentBean.id,r)} onEditBean={()=>setEditBeanFor(currentBean.id)}/>
         }
       </div>

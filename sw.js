@@ -1,4 +1,4 @@
-const CACHE = 'thegrind-v22';
+const CACHE = 'thegrind-v23';
 
 const LOCAL = [
   './',
@@ -11,7 +11,6 @@ const CDN = [
   'https://unpkg.com/react@18.3.1/umd/react.development.js',
   'https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js',
   'https://unpkg.com/@babel/standalone@7.29.0/babel.min.js',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js',
 ];
 
 self.addEventListener('install', e => {
@@ -43,14 +42,6 @@ self.addEventListener('fetch', e => {
   const isHTML = e.request.destination === 'document'
     || url.pathname === '/'
     || url.pathname.endsWith('.html');
-
-  // Supabase API/realtime — ALWAYS hit the network, never cache.
-  // (Caching GET /rest/v1 made refreshes show stale beans even though
-  //  writes succeeded — the "save didn't stick" bug.)
-  if (url.hostname.endsWith('supabase.co')) {
-    e.respondWith(fetch(e.request));
-    return;
-  }
 
   // Network-first for local HTML — ได้ code ใหม่ทันทีทุกครั้งที่ deploy
   if (isLocal && isHTML) {
