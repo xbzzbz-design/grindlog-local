@@ -107,9 +107,39 @@
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script>
+// ─── IndexedDB storage ────────────────────────────────────────────────────
+(function() {
+  const DB = 'thegrind', STORE = 'kv', KEY = 'beans';
+  function open() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open(DB, 1);
+      r.onupgradeneeded = e => e.target.result.createObjectStore(STORE);
+      r.onsuccess = e => res(e.target.result);
+      r.onerror   = e => rej(e.target.error);
+    });
+  }
+  window.idbLoad = async () => {
+    const db = await open();
+    return new Promise((res, rej) => {
+      const r = db.transaction(STORE,'readonly').objectStore(STORE).get(KEY);
+      r.onsuccess = e => res(e.target.result ?? null);
+      r.onerror   = e => rej(e.target.error);
+    });
+  };
+  window.idbSave = async (data) => {
+    const db = await open();
+    return new Promise((res, rej) => {
+      const r = db.transaction(STORE,'readwrite').objectStore(STORE).put(data, KEY);
+      r.onsuccess = () => res();
+      r.onerror   = e => rej(e.target.error);
+    });
+  };
+})();
+</script>
+
 <script type="text/babel" data-presets="react">
 const APP_VERSION = 'v23';
-const STORAGE_KEY = 'thegrind-beans';
 
 // ─── Data ──────────────────────────────────────────────────────────────────
 const TODAY = new Date();
@@ -2104,7 +2134,7 @@ function AppJapandi() {
   const commit = React.useCallback((next) => {
     beansRef.current = next;
     setBeans(next);
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch {}
+    window.idbSave(next).catch(() => {});
   }, []);
 
   // Auto-hide the save toast
@@ -2114,17 +2144,29 @@ function AppJapandi() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Load from localStorage on mount
+  // Load from IndexedDB on mount; seed from seed.json on first launch
   React.useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      const parsed = stored ? JSON.parse(stored) : null;
-      if (Array.isArray(parsed) && parsed.length) {
-        beansRef.current = parsed;
-        setBeans(parsed);
-      }
-    } catch {}
-    setLoading(false);
+    (async () => {
+      try {
+        const stored = await window.idbLoad();
+        if (Array.isArray(stored) && stored.length) {
+          beansRef.current = stored;
+          setBeans(stored);
+          setLoading(false);
+          return;
+        }
+        const res = await fetch('./seed.json');
+        if (res.ok) {
+          const seeded = await res.json();
+          if (Array.isArray(seeded) && seeded.length) {
+            beansRef.current = seeded;
+            setBeans(seeded);
+            await window.idbSave(seeded);
+          }
+        }
+      } catch {}
+      setLoading(false);
+    })();
   }, []);
 
   const open = id => setView({ name:'detail', bean:id });

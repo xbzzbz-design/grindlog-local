@@ -5,6 +5,7 @@ const LOCAL = [
   './index.html',
   './manifest.json',
   './icon.svg',
+  './seed.json',
 ];
 
 const CDN = [
