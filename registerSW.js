@@ -1,1 +1,1 @@
-if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/grindlog-local/sw.js', { scope: '/grindlog-local/' })})}
+if("serviceWorker"in navigator){let e=!1;navigator.serviceWorker.addEventListener("controllerchange",()=>{e||(e=!0,location.reload())}),window.addEventListener("load",async()=>{try{const e=await navigator.serviceWorker.register("/grindlog-local/sw.js",{scope:"/grindlog-local/",updateViaCache:"none"});await e.update(),e.waiting&&e.waiting.postMessage({type:"SKIP_WAITING"})}catch{}})}

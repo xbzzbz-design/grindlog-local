@@ -1,6 +1,7 @@
 {
   "name": "GrindLog",
   "short_name": "GrindLog",
+  "version": "2026.06.18.3",
   "description": "Coffee grind settings tracker",
   "start_url": "/",
   "display": "standalone",
